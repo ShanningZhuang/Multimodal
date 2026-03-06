@@ -1,0 +1,37 @@
+# Multimodal Applications
+
+> Parent: [Multimodal Models](../00_Multimodal.md)
+
+## Overview
+
+This section covers downstream applications of multimodal models — where the visual encoders, diffusion models, and VLMs come together to solve real-world problems. Applications span image generation, video, and robotics.
+
+## Topics
+
+| # | Topic | File | Description |
+|---|-------|------|-------------|
+| 1 | Image Generation | [01_Image_Generation.md](01_Image_Generation.md) | Text-to-image, editing, inpainting |
+| 2 | Video | [02_Video.md](02_Video.md) | Video generation and understanding |
+| 3 | Robotics | [03_Robotics.md](03_Robotics.md) | VLA models, DiT for robotics, embodied AI |
+
+## Application Landscape
+
+```
+                    Multimodal Models
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+    Image/Creative     Video          Robotics/
+    ┌──────────┐    ┌──────────┐    Embodied AI
+    │Text2Image│    │Text2Video│    ┌──────────┐
+    │Editing   │    │Video QA  │    │VLA Models│
+    │Inpainting│    │Editing   │    │DiT Policy│
+    │ControlNet│    │Streaming │    │Sim2Real  │
+    └──────────┘    └──────────┘    └──────────┘
+```
+
+## Related
+
+- [Diffusion Models](../diffusion/00_Diffusion.md) — generation backbone
+- [Vision-Language Models](../vision_language/00_Vision_Language.md) — understanding backbone
+- [AI_Infra: Multimodal Inference](../../AI_Infra/inference/07_Multimodal_Inference.md) — serving these applications
