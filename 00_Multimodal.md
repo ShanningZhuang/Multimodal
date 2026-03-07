@@ -107,6 +107,8 @@
 | DDPM (Ho et al.) | 2020 | Denoising diffusion probabilistic models |
 | Latent Diffusion (Rombach et al.) | 2022 | Stable Diffusion, diffusion in latent space |
 | DiT (Peebles & Xie) | 2023 | Transformer replaces U-Net for diffusion |
+| [MAGVIT](https://arxiv.org/abs/2212.05199) (Yu et al.) | 2023 | 3D VQ tokenizer for video/image |
+| [MAGVIT-2](https://arxiv.org/abs/2310.05737) (Yu et al.) | 2024 | LFQ tokenizer — AR beats diffusion |
 | LLaVA (Liu et al.) | 2023 | Simple, effective VLM |
 | DINOv2 (Oquab et al.) | 2023 | Self-supervised ViT at scale |
 | SigLIP 2 (Tschannen et al.) | 2025 | Improved contrastive visual encoder |

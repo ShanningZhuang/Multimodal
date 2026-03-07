@@ -17,7 +17,7 @@ Three primary patterns emerge, plus a fourth fully-autoregressive approach:
 | [AR + DiT(Main)](#pattern-1-ar--ditmain) | DiT | Qwen-Image, Qwen-Image-Edit | Image, Video |
 | [AR(Main) + DiT](#pattern-2-armain--dit) | AR decoder | BAGEL, Hunyuan Image 3.0 | Image + Text (interleaved) |
 | [AR + DiT (Omni)](#pattern-3-ar--dit-omni) | Both AR and DiT | Qwen3-Omni, Ming-Omni | Text + Audio |
-| [Fully AR](#pattern-4-fully-autoregressive) | AR decoder | Nano Banana Pro | Image (no DiT) |
+| [AR-Dominated](#pattern-4-ar-dominated-no-separate-dit) | AR decoder + learned decoder | Nano Banana Pro | Image (no separate DiT) |
 
 ---
 
@@ -320,20 +320,20 @@ No single stage can be optimized away. This is why Pattern 3 models need vLLM-Om
 
 ---
 
-## Pattern 4: Fully Autoregressive
+## Pattern 4: AR-Dominated (No Separate DiT)
 
-**No DiT at all.** The LLM generates image tokens directly, which are decoded by an image decoder. This is the simplest architecture but requires the LLM to learn pixel-level generation.
+**The LLM handles creative generation; a learned decoder handles pixel reconstruction.** Often called "fully autoregressive," but this is misleading — the AR model generates discrete image tokens, not pixels. A non-trivial **image decoder** (tokenizer decoder, possibly with diffusion-based upsampling) converts tokens back to pixel space. The key distinction from Patterns 1-3 is that no separate DiT operates on the latent space during generation.
 
 ### Example Models
 
-- **Nano Banana Pro** (Google, built on Gemini 3 Pro)
-- **Chameleon** (Meta)
-- **Janus** (DeepSeek)
+- **Nano Banana Pro** (Google, built on Gemini 3 Pro) — proprietary
+- **Chameleon** (Meta) — VQ-VAE tokenizer + AR generation
+- **Janus** (DeepSeek) — VQ tokenizer + AR generation
 
 ### Data Flow
 
 ```
-Fully AR (Nano Banana Pro):
+AR-Dominated (Nano Banana Pro — hypothesized):
 
 Text prompt
     │
@@ -341,25 +341,104 @@ Text prompt
 ┌──────────────────────────┐
 │  Gemini 3 Pro (LLM)      │
 │  1. Thinking/reasoning    │  Plans the image via CoT
-│  2. Token generation      │  ~1,290 image tokens for 1MP
-│  (autoregressive)         │  Each token sampled sequentially
+│  2. Token generation      │  ~1,290 discrete image tokens for 1MP
+│  (autoregressive)         │  Each token sampled from VQ codebook
 └───────────┬──────────────┘
-            │ image tokens
+            │ discrete image tokens (VQ codes)
             ▼
 ┌──────────────────────────┐
-│  Image Decoder            │  Tokens → pixels
+│  Image Decoder            │  VQ codes → pixels
+│  (likely MAGVIT-2 or      │  Deep CNN/Transformer decoder
+│   similar VQ decoder)     │  ~28x spatial upsampling
 └───────────┬──────────────┘
-            │
-            ▼
-        Output Image
+            │               ┌──────────────────────────┐
+            ├──────────────►│  Diffusion Upsampler?     │  (for 4K output)
+            │               │  (hypothesized for high-  │
+            │               │   res variants)           │
+            │               └───────────┬──────────────┘
+            │                           │
+            ▼                           ▼
+        Output Image (1MP)         Output Image (4K)
 ```
+
+### The "Fully AR" Misconception
+
+The label "fully autoregressive" describes the **token generation** stage, not the full pipeline. Converting ~1,290 discrete tokens to 1 megapixel (1024x1024 = 1,048,576 pixels) requires a powerful learned decoder — each token encodes ~813 pixels worth of information. This decoder does substantial work:
+
+- **VQ codebook lookup** — each token maps to a learned embedding vector
+- **Spatial upsampling** — from ~36x36 grid to 1024x1024 (~28x upsampling)
+- **Detail synthesis** — the decoder must hallucinate fine-grained textures, edges, and gradients not captured in the discrete codes
+
+### Hypothesized Internals (Nano Banana Pro)
+
+Nano Banana Pro is proprietary, but we can reason about its architecture from observable behavior and Google's published research:
+
+#### Hypothesis A: VQ Tokenizer + Powerful Decoder (Most Likely)
+
+Google developed **[MAGVIT-2](https://arxiv.org/abs/2310.05737)** (Yu et al., ICLR 2024), a state-of-the-art VQ tokenizer specifically for autoregressive image generation. It introduced **Lookup-Free Quantization (LFQ)** — replacing traditional codebook lookup with binary decomposition, enabling a massive vocabulary (2^18 = 262,144 codes) without codebook collapse. Built on the earlier **[MAGVIT](https://arxiv.org/abs/2212.05199)** (Yu et al., CVPR 2023), which introduced 3D VQ tokenization for video:
+
+```
+Training:  Image → MAGVIT-2 Encoder → ~1,290 VQ codes → MAGVIT-2 Decoder → Reconstructed image
+                    (learns codebook)                     (learns upsampling)
+
+Inference: Prompt → Gemini (AR) → ~1,290 VQ codes → MAGVIT-2 Decoder → Image
+```
+
+- ~36x36 spatial grid of codes (36x36 = 1,296 ≈ 1,290)
+- Decoder is a deep convolutional network, not a simple lookup
+- This is what DALL-E 1, Parti, and Chameleon all do
+
+#### Hypothesis B: AR Tokens + Diffusion Upsampler (Likely for 4K)
+
+Google has a history of cascaded approaches (Imagen used cascaded diffusion). The token count scaling is suspicious:
+
+| Resolution | Tokens | Pixels | Tokens/Pixel Ratio |
+|-----------|--------|--------|-------------------|
+| 1MP (1K) | ~1,290 | 1M | 1:775 |
+| 4MP (2K) | ~1,120 | 4M | 1:3,571 |
+| 16MP (4K) | ~2,000 | 16M | 1:8,000 |
+
+If it were purely VQ-decoded, token count should scale roughly linearly with pixels. Instead, going from 1MP to 16MP (16x more pixels) only requires ~1.55x more tokens. This strongly suggests a **diffusion-based super-resolution** stage handles the high-res upsampling:
+
+```
+Gemini (AR) → ~2,000 VQ codes → VQ Decoder → Base image (e.g. 512x512)
+                                                    │
+                                                    ▼
+                                              Diffusion SR → 4K image
+```
+
+This would make the 4K variant effectively **Pattern 2 (AR Main + DiT)** in disguise.
+
+#### Hypothesis C: Continuous Latent Tokens + VAE Decoder
+
+Instead of discrete VQ codes, the LLM might predict **continuous vectors**:
+
+```
+Gemini (AR) → continuous latent vectors → VAE-like Decoder → Image
+```
+
+This blurs the line with latent diffusion — the AR model generates a latent representation directly, and a VAE decoder reconstructs pixels. Less likely given Google's investment in discrete tokenization (MAGVIT-2).
+
+### Open-Source AR-Dominated Models
+
+Unlike Nano Banana Pro, these models have known architectures:
+
+| Model | Tokenizer | Decoder | Architecture |
+|-------|-----------|---------|-------------|
+| Chameleon (Meta) | VQ-VAE (8,192 codebook) | CNN decoder | Purely AR over discrete tokens |
+| Janus (DeepSeek) | VQ tokenizer | VQ decoder | AR generation, separate understanding encoder |
+| Parti (Google) | ViT-VQGAN (8,192 codebook) | CNN decoder | AR generation, 1,024 tokens for 256x256 |
+| MAGVIT-2 (Google) | LFQ (262,144 codebook) | CNN decoder | Tokenizer — first to show AR beats diffusion |
+
+All confirm the pattern: AR generates discrete codes, a learned decoder reconstructs pixels. The decoder quality is critical to output quality.
 
 ### Key Differences from Patterns 1-3
 
-- **No diffusion** — no iterative denoising, no noise schedule, no CFG
-- **No separate text encoder** — the same LLM that understands the prompt generates the image
+- **No diffusion in the main generation loop** — no iterative denoising for the creative decisions (composition, content, structure)
+- **No separate text encoder** — the same LLM that understands the prompt generates the image tokens
 - **Non-deterministic** — randomness at every token step; seeds cannot reproduce exact outputs
 - **Reasoning-integrated** — the model's chain-of-thought reasoning directly informs generation
+- **Decoder does heavy lifting** — unlike Patterns 1-3 where the DiT/diffusion is explicit, here the decoder's sophistication is hidden but critical
 
 See [Image Generation](../applications/01_Image_Generation.md) for a detailed comparison with diffusion-based approaches.
 
@@ -367,17 +446,18 @@ See [Image Generation](../applications/01_Image_Generation.md) for a detailed co
 
 ## Pattern Comparison
 
-| | AR + DiT(Main) | AR(Main) + DiT | AR + DiT (Omni) | Fully AR |
+| | AR + DiT(Main) | AR(Main) + DiT | AR + DiT (Omni) | AR-Dominated |
 |---|---|---|---|---|
-| **Bottleneck** | DiT (20-50 denoising steps) | AR decoder (token-by-token) | Both AR and DiT | AR decoder |
-| **DiT role** | Main generator | Auxiliary refiner | Waveform synthesizer | None |
-| **AR role** | Conditioning only | Main generator | Understanding + codec generation | Everything |
+| **Bottleneck** | DiT (20-50 denoising steps) | AR decoder (token-by-token) | Both AR and DiT | AR decoder + decoder quality |
+| **DiT role** | Main generator | Auxiliary refiner | Waveform synthesizer | None (or hidden in upsampler) |
+| **AR role** | Conditioning only | Main generator | Understanding + codec generation | Creative generation (tokens) |
+| **Decoder role** | VAE decoder (simple) | VAE decoder (simple) | DiT vocoder | VQ decoder (heavy lifting) |
 | **Output modalities** | Image, Video | Image + Text | Text + Audio | Image |
 | **Interleaved text+image** | No | Yes (CoT + image) | Yes (text + audio) | Yes (think + image) |
 | **Example models** | Qwen-Image | BAGEL, Hunyuan | Qwen3-Omni | Nano Banana Pro, Chameleon |
 | **CFG needed** | Optional | Model-dependent | No | No |
-| **Serving complexity** | 2-stage (AR + DiT) | 2-stage (AR + DiT) | 3-stage (Thinker + Talker + DiT) | 1-stage (AR only) |
-| **Primary optimization** | DiT step distillation | KV cache, speculative decoding | Disaggregated pipeline | KV cache, speculative decoding |
+| **Serving complexity** | 2-stage (AR + DiT) | 2-stage (AR + DiT) | 3-stage (Thinker + Talker + DiT) | 1-stage (AR + decoder) |
+| **Primary optimization** | DiT step distillation | KV cache, speculative decoding | Disaggregated pipeline | KV cache, VQ codebook quality |
 
 ### When to Use Which
 
@@ -387,7 +467,7 @@ See [Image Generation](../applications/01_Image_Generation.md) for a detailed co
 
 - **Pattern 3 (AR + DiT Omni)**: Required for any-to-any modality, especially text+audio output. The three-stage pipeline is more complex to serve but handles the full multimodal spectrum. Choose for voice assistants and omni-modal agents.
 
-- **Pattern 4 (Fully AR)**: Simplest architecture, leverages LLM scale directly. No diffusion infrastructure needed. Choose when you want unified text+image generation in a single model without managing a DiT pipeline. Currently strongest in proprietary models (Gemini).
+- **Pattern 4 (AR-Dominated)**: Simplest serving architecture — no explicit DiT pipeline to manage. The LLM handles creative generation; a learned decoder (VQ decoder, possibly with diffusion upsampler for high-res) handles pixel reconstruction. Currently strongest in proprietary models (Gemini). The decoder quality is the hidden bottleneck — MAGVIT-2 class tokenizers are required for competitive output.
 
 ## Related
 

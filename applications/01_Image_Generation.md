@@ -42,8 +42,20 @@ Autoregressive approach (Nano Banana Pro):
 **How it works:**
 
 1. **Thinking step** — Gemini 3 Pro's reasoning ("thinking") is mandatory and acts as prompt augmentation, orienting the user's intent before generation begins. The model may generate interim images during thinking to test composition.
-2. **Token generation** — the text encoder (Gemini 3 Pro) generates ~1,290 autoregressive image tokens for 1 megapixel output, ~1,120 tokens for 4MP, and ~2,000 tokens for 16MP (4K). Each token is sampled from a probability distribution, with randomness at every step.
-3. **Image decoding** — tokens are decoded into pixels by an image decoder.
+2. **Token generation** — the LLM autoregressively generates ~1,290 discrete image tokens for 1 megapixel output, ~1,120 tokens for 4MP, and ~2,000 tokens for 16MP (4K). Each token is sampled from a probability distribution, with randomness at every step. These are likely VQ codebook indices (not raw pixels) — see below.
+3. **Image decoding** — a **learned decoder** (likely MAGVIT-2 class) converts discrete tokens back to pixel space. This is not a trivial lookup — the decoder performs ~28x spatial upsampling with detail synthesis. For 4K variants, a diffusion-based super-resolution stage likely assists.
+
+**What "autoregressive image generation" actually means:**
+
+The "fully AR" label applies to **token generation** (step 2), not to the full pipeline. Each token encodes ~813 pixels worth of information for 1MP output, requiring a powerful decoder to reconstruct fine details. The token count scaling across resolutions reveals this:
+
+| Resolution | Tokens | Pixels | Tokens-to-Pixel Ratio |
+|-----------|--------|--------|----------------------|
+| 1MP (1K) | ~1,290 | 1M | 1:775 |
+| 4MP (2K) | ~1,120 | 4M | 1:3,571 |
+| 16MP (4K) | ~2,000 | 16M | 1:8,000 |
+
+Going from 1MP to 16MP (16x pixels) requires only ~1.55x more tokens, strongly suggesting a diffusion-based upsampler handles high-resolution output. The 4K variant may effectively be **Pattern 2 (AR Main + DiT)** in disguise. See [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) for detailed analysis of the hypothesized architecture.
 
 **Why this matters for the field:**
 
@@ -59,7 +71,7 @@ Autoregressive approach (Nano Banana Pro):
 
 The key insight: by unifying the text encoder and the image generator into a single LLM, Nano Banana Pro leverages the model's world knowledge and reasoning for image generation. There is no separate CLIP encoder, no CFG, no negative prompt — just a prompt in, image out, exactly like how LLMs handle text.
 
-This is **Pattern 4 (Fully Autoregressive)** in the [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) taxonomy — no DiT at all.
+This is **Pattern 4 (AR-Dominated)** in the [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) taxonomy — no explicit DiT in the main generation loop, though the decoder and possible upsampler do substantial work.
 
 **Model variants:**
 
@@ -120,9 +132,9 @@ The dual-path design is what makes editing precise: Qwen2.5-VL *understands* wha
 
 ### Generation Paradigm Comparison
 
-| | Diffusion (SD/FLUX) | AR-only (Nano Banana Pro) | AR + DiT (Qwen-Image) |
+| | Diffusion (SD/FLUX) | AR-Dominated (Nano Banana Pro) | AR + DiT (Qwen-Image) |
 |---|---|---|---|
-| Architecture | U-Net/DiT denoiser | LLM token predictor + decoder | VLM encoder + MMDiT denoiser |
+| Architecture | U-Net/DiT denoiser | LLM token predictor + VQ decoder (+ upsampler?) | VLM encoder + MMDiT denoiser |
 | Prompt interface | Prompt + negative prompt | Prompt only | Prompt only (negative optional) |
 | CFG required | Yes | No | Optional (default 4.0) |
 | Generation mechanism | Iterative denoising | Sequential token prediction | Latent diffusion |
