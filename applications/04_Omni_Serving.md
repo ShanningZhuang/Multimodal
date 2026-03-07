@@ -19,17 +19,11 @@ This page uses **vLLM-Omni** as a concrete case study to examine how these probl
 
 ### Multi-Modality Model Architectures
 
-vLLM-Omni supports three distinct architectural patterns for multi-modality models, each combining AR and DiT components differently:
+vLLM-Omni supports three distinct architectural patterns, each combining AR and DiT components differently. The bottleneck shifts depending on the pattern: DiT-dominated (Pattern 1), AR-dominated (Pattern 2), or both (Pattern 3).
 
 ![Multi-modality model architectures](../images/multi-modality-models.png)
 
-**Pattern 1: AR + DiT(Main)** — Models like **Qwen-Image** where the AR decoder (Qwen2.5-VL) processes text/image inputs and produces tokens that are patchified into latent space, then a DiT performs the main generation work (denoising), and UnPatchify reconstructs the output image. The DiT is the primary generation backbone. Tasks: text-to-image (t2i), text-to-video (t2v), image-to-image (i2i).
-
-**Pattern 2: AR(Main) + DiT** — Models like **BAGEL** and **Hunyuan Image 3.0** where the AR decoder is the main backbone. It takes text (via tokenizer) and images (via visual encoder) as input, autoregressively generates both text output / chain-of-thought tokens and image latent tokens in a unified sequence. The DiT operates as an auxiliary module that refines the image latents into the final output. Tasks: text-to-image (t2i), image-to-image (i2i), image-to-text (i2t).
-
-**Pattern 3: AR + DiT (Omni)** — Models like **Qwen-Omni** and **Ming-Omni** that accept any modality (text, image, audio) through dedicated encoders (text tokenizer, visual encoder, audio encoder). The AR pipeline has two stages: a **Thinker** that processes all inputs and generates text/reasoning tokens, and a **Talker** that converts those into audio codec codes (RVQ). A **Code2Wav** DiT stage then synthesizes the final audio waveform. Tasks: any-to-text+audio.
-
-The key architectural difference is *where the generation bottleneck sits*: in Pattern 1 it is the DiT, in Pattern 2 it is the AR decoder, and in Pattern 3 both AR and DiT stages are critical, requiring the disaggregated multi-stage pipeline that vLLM-Omni provides.
+For detailed data flows, component roles, and design tradeoffs of each pattern, see [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md). The rest of this document focuses on **how vLLM-Omni serves** these patterns.
 
 ### Supported Models
 

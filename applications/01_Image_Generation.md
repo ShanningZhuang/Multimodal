@@ -59,6 +59,8 @@ Autoregressive approach (Nano Banana Pro):
 
 The key insight: by unifying the text encoder and the image generator into a single LLM, Nano Banana Pro leverages the model's world knowledge and reasoning for image generation. There is no separate CLIP encoder, no CFG, no negative prompt — just a prompt in, image out, exactly like how LLMs handle text.
 
+This is **Pattern 4 (Fully Autoregressive)** in the [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) taxonomy — no DiT at all.
+
 **Model variants:**
 
 | Variant | Base LLM | Tokens/Image | Max Resolution | Speed |
@@ -69,7 +71,7 @@ The key insight: by unifying the text encoder and the image generator into a sin
 
 ### Open-Source Alternative: Qwen-Image
 
-Qwen-Image is a **20B parameter MMDiT** (Multimodal Diffusion Transformer) from Alibaba's Qwen team, released under Apache 2.0. It follows the **Pattern 1: AR + DiT(Main)** architecture described in [Omni-Modality Serving](04_Omni_Serving.md):
+Qwen-Image is a **20B parameter MMDiT** (Multimodal Diffusion Transformer) from Alibaba's Qwen team, released under Apache 2.0. It follows **Pattern 1: AR + DiT(Main)** — see [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) for the full architecture deep dive:
 
 ```
                    Qwen-Image Architecture

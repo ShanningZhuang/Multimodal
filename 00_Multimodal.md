@@ -63,6 +63,18 @@
 
 ---
 
+## Phase 3.5: Generation Architecture
+
+> How components compose into end-to-end generation systems
+
+| # | Topic | File | Status |
+|---|-------|------|--------|
+| 1 | Generation Patterns (AR+DiT composition) | [multimodal_generation/01_Generation_Patterns.md](multimodal_generation/01_Generation_Patterns.md) | [ ] |
+
+**Section index**: [multimodal_generation/00_Multimodal_Generation.md](multimodal_generation/00_Multimodal_Generation.md)
+
+---
+
 ## Phase 4: Applications
 
 > Where multimodal models meet the real world

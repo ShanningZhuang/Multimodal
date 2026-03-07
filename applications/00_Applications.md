@@ -33,6 +33,7 @@ This section covers downstream applications of multimodal models — where the v
 
 ## Related
 
+- [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) — how AR and DiT compose into end-to-end generation systems
 - [Diffusion Models](../diffusion/00_Diffusion.md) — generation backbone
 - [Vision-Language Models](../vision_language/00_Vision_Language.md) — understanding backbone
 - [AI_Infra: Multimodal Inference](../../AI_Infra/inference/07_Multimodal_Inference.md) — serving these applications

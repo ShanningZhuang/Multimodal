@@ -168,6 +168,7 @@ Mixed workloads are hard to batch efficiently — see [Multimodal Inference](../
 ## Related
 
 - [Architecture](01_Architecture.md) — fusion strategies these models build on
+- [Generation Patterns](../multimodal_generation/01_Generation_Patterns.md) — how dual encoder / unified encoder approaches map to end-to-end generation architectures (AR+DiT composition patterns)
 - [VAE](../visual_encoder/04_VAE.md) — reconstruction encoder used in dual-encoder models
 - [Semantic Encoders](../visual_encoder/03_Semantic_Encoders.md) — understanding encoder, potential unified encoder
 - [Diffusion Models](../diffusion/00_Diffusion.md) — generation backbone for diffusion-based models
