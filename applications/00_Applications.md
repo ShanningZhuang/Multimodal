@@ -13,21 +13,22 @@ This section covers downstream applications of multimodal models — where the v
 | 1 | Image Generation | [01_Image_Generation.md](01_Image_Generation.md) | Text-to-image, editing, inpainting |
 | 2 | Video | [02_Video.md](02_Video.md) | Video generation and understanding |
 | 3 | Robotics | [03_Robotics.md](03_Robotics.md) | VLA models, DiT for robotics, embodied AI |
+| 4 | Omni-Modality Serving | [04_Omni_Serving.md](04_Omni_Serving.md) | Multi-stage pipelines, disaggregated inference (vLLM-Omni case study) |
 
 ## Application Landscape
 
 ```
-                    Multimodal Models
-                          │
-          ┌───────────────┼───────────────┐
-          ▼               ▼               ▼
-    Image/Creative     Video          Robotics/
-    ┌──────────┐    ┌──────────┐    Embodied AI
-    │Text2Image│    │Text2Video│    ┌──────────┐
-    │Editing   │    │Video QA  │    │VLA Models│
-    │Inpainting│    │Editing   │    │DiT Policy│
-    │ControlNet│    │Streaming │    │Sim2Real  │
-    └──────────┘    └──────────┘    └──────────┘
+                          Multimodal Models
+                                │
+          ┌─────────────┬───────┼───────┬──────────────┐
+          ▼             ▼       ▼       ▼              ▼
+    Image/Creative   Video  Robotics/  Omni-Modality
+    ┌──────────┐  ┌────────┐ Embodied  Serving
+    │Text2Image│  │Text2Vid│ ┌──────┐  ┌──────────┐
+    │Editing   │  │VideoQA │ │VLA   │  │Multi-Stage│
+    │Inpainting│  │Editing │ │DiT   │  │Pipelines │
+    │ControlNet│  │Stream  │ │Sim2R │  │Disaggreg.│
+    └──────────┘  └────────┘ └──────┘  └──────────┘
 ```
 
 ## Related
