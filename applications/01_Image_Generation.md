@@ -98,6 +98,32 @@ Noise level controls edit strength:
 | Negative prompt | Avoid artifacts | "blurry, low quality, deformed" |
 | Seed | Reproducibility | Fix for consistent results |
 
+#### Classifier-Free Guidance (CFG)
+
+During training, diffusion models randomly drop the text condition (replace with null/empty) some percentage of the time. This gives the model two capabilities: conditional generation \(\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c)\) and unconditional generation \(\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, \varnothing)\).
+
+At inference, CFG steers the denoising direction by amplifying the difference between conditioned and unconditioned predictions:
+
+\[
+\tilde{\boldsymbol{\epsilon}}_\theta(\mathbf{x}_t, c) = \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, \varnothing) + w \left[\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c) - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, \varnothing)\right]
+\]
+
+- \(w = 1.0\): no guidance, model follows its learned distribution as-is
+- \(w > 1.0\): overshoots toward the conditioned direction — higher prompt fidelity but eventually saturated colors / artifacts
+- \(w = 0.0\): purely unconditional generation, ignores the prompt entirely
+
+This works because \(\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c) - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, \varnothing)\) points in the direction of "what the condition adds," and scaling it up makes the model follow the prompt more aggressively. It requires **two forward passes per step** (one conditioned, one unconditioned), doubling compute. Distilled models (FLUX schnell, SDXL Turbo) bake guidance into the weights so they skip this.
+
+#### Negative Prompt
+
+LLMs have no equivalent because autoregressive generation is a single forward pass conditioned on one token sequence. In diffusion models, since CFG already runs an unconditional pass, the negative prompt simply **replaces the null condition** \(\varnothing\) with an undesired condition \(c_{\text{neg}}\):
+
+\[
+\tilde{\boldsymbol{\epsilon}}_\theta(\mathbf{x}_t, c_{\text{pos}}, c_{\text{neg}}) = \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c_{\text{neg}}) + w \left[\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c_{\text{pos}}) - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, c_{\text{neg}})\right]
+\]
+
+Now the model moves *away from* \(c_{\text{neg}}\) and *toward* \(c_{\text{pos}}\). Typical negative prompts like "blurry, low quality, deformed, extra fingers" steer the model away from common failure modes of the training data. This is essentially free — it reuses the second forward pass that CFG already requires.
+
 ### Inference Cost
 
 ```
