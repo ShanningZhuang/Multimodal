@@ -84,8 +84,15 @@ Content...
 - Use ASCII diagrams for architecture/flow visualization
 - Add practical examples and use cases
 - Structure content from fundamentals to advanced
-- Include math notation where appropriate (LaTeX-style)
 - Cross-reference related topics in other KBs (LLM, AI_Infra)
+- **Math & Equations**: Always use LaTeX math notation, never code blocks for equations
+  - Inline math: `$x = y + z$` renders as math, not code
+  - Display math: use `$$` blocks for standalone equations
+  - Example — write `$L = -\sum_{t} \log P(x_t | x_{<t})$` instead of putting equations in ``` code fences
+  - Use `\text{}` for words inside math: `$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda \mathcal{L}_{\text{KL}}$`
+  - Common patterns:
+    - Diffusion loss: `$$\mathcal{L} = \mathbb{E}_{t, x_0, \epsilon} \left[ \| \epsilon - \epsilon_\theta(x_t, t) \|^2 \right]$$`
+    - Attention: `$\text{Attention}(Q,K,V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$`
 ```
 
 ---

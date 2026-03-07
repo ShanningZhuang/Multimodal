@@ -36,3 +36,11 @@ This section covers downstream applications of multimodal models — where the v
 - [Diffusion Models](../diffusion/00_Diffusion.md) — generation backbone
 - [Vision-Language Models](../vision_language/00_Vision_Language.md) — understanding backbone
 - [AI_Infra: Multimodal Inference](../../AI_Infra/inference/07_Multimodal_Inference.md) — serving these applications
+
+## Code
+
+Use vLLM-omni as example for learning
+
+https://docs.vllm.ai/projects/vllm-omni/en/latest/#about
+https://blog.vllm.ai/2025/11/30/vllm-omni.html
+https://docs.google.com/presentation/d/1qv4qMW1rKAqDREMXiUDLIgqqHQe7TDPj/edit?slide=id.p57#slide=id.p57
