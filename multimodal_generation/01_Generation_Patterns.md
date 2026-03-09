@@ -469,6 +469,231 @@ See [Image Generation](../applications/01_Image_Generation.md) for a detailed co
 
 - **Pattern 4 (AR-Dominated)**: Simplest serving architecture — no explicit DiT pipeline to manage. The LLM handles creative generation; a learned decoder (VQ decoder, possibly with diffusion upsampler for high-res) handles pixel reconstruction. Currently strongest in proprietary models (Gemini). The decoder quality is the hidden bottleneck — MAGVIT-2 class tokenizers are required for competitive output.
 
+## Appendix: vLLM-Omni Model Reference
+
+The [vLLM-Omni](https://github.com/vllm-project/vllm-omni) codebase provides concrete implementations of Patterns 1-3. Each model is defined by a **YAML stage config** that declares the pipeline stages, and **stage input processors** that transform data between stages. This appendix maps every supported model to its generation pattern.
+
+Source: `/root/vllm-omni/vllm_omni/model_executor/`
+
+### Pattern 1: AR + DiT(Main) — Image Generation
+
+These models use the AR stage for conditioning/understanding, then a DiT stage does the main image generation work.
+
+#### GLM-Image
+
+```
+Stage 0 (AR)                          Stage 1 (DiT)
+┌─────────────────────┐   prior     ┌─────────────────────┐
+│ GlmImageForCond...  │   tokens    │ Diffusion pipeline   │
+│ worker_type: ar      │ ─────────► │ worker_type: gen     │
+│ output: token_ids    │ ar2diffusion│ output: image        │
+│ is_comprehension: T  │            │                      │
+└─────────────────────┘            └─────────────────────┘
+```
+
+- **Stage config**: `stage_configs/glm_image.yaml`
+- **Stage input processor**: `stage_input_processors/glm_image.py` — `ar2diffusion()` upsamples prior tokens by 2x (32x→16x downsampling), extracts VQ-VAE token IDs for i2i mode
+- **Modalities**: text (+ optional image) → image
+- **Notable**: supports both t2i and i2i modes; prior tokens are upsampled before DiT
+
+#### MammothModa2
+
+```
+Stage 0 (AR)                          Stage 1 (DiT)
+┌─────────────────────┐   hidden    ┌─────────────────────┐
+│ MammothModa2AR...    │   states   │ MammothModa2DiT...   │
+│ worker_type: ar      │ ─────────► │ worker_type: gen     │
+│ output: latent       │  ar2dit    │ output: image        │
+│ max_batch: 100       │            │ max_batch: 1         │
+└─────────────────────┘            └─────────────────────┘
+```
+
+- **Stage config**: `stage_configs/mammoth_moda2.yaml` (full pipeline), `mammoth_moda2_ar.yaml` (AR-only for understanding)
+- **Stage input processor**: `stage_input_processors/mammoth_moda2.py` — `ar2dit()` extracts hidden states, creates separate `text_condition_token_mask` and `image_condition_token_mask` attention masks
+- **Modalities**: multimodal → image (or text-only in AR-only mode)
+- **Notable**: MoE support with separate `und_expert` vs `gen_expert` routing; AR-only config available for pure understanding tasks
+
+#### Hunyuan-Image-3
+
+```
+Stage 0 (AR)
+┌─────────────────────┐
+│ HunyuanImage3For...  │   Only AR stage defined in vLLM-Omni
+│ worker_type: ar      │   External DiT pipeline handles image generation
+│ output: latent       │
+│ tp_size: 8           │
+│ is_comprehension: T  │
+└─────────────────────┘
+```
+
+- **Stage config**: `stage_configs/hunyuan_image_3_moe.yaml`
+- **Modalities**: image + text → latent (for external diffusion)
+- **Notable**: requires 8x L40S-48G GPUs (TP=8); only the AR comprehension stage is defined in vLLM-Omni, the DiT runs externally
+
+### Pattern 2: AR(Main) + DiT — Interleaved Text + Image
+
+The AR decoder is the main backbone, generating both text and image latent tokens. The DiT refines image latents.
+
+#### BAGEL
+
+```
+Stage 0 (AR — Main)                   Stage 1 (DiT — Auxiliary)
+┌─────────────────────┐   KV cache  ┌─────────────────────┐
+│ AR thinker           │  + latents  │ DiT image generator  │
+│ worker_type: ar      │ ─────────► │ worker_type: gen     │
+│ output: text         │  collect_   │ output: image        │
+│ expand_cfg_prompts   │  cfg_kv_   │                      │
+│ (CFG triple-branch)  │  caches    │                      │
+└─────────────────────┘            └─────────────────────┘
+```
+
+- **Stage config**: `stage_configs/bagel.yaml`, `bagel_multiconnector.yaml` (distributed)
+- **Stage input processor**: `stage_input_processors/bagel.py` — `expand_cfg_prompts()` creates triple-branch CFG (gen + cfg_text + cfg_img); `collect_cfg_kv_caches()` transfers KV caches from AR to DiT via `kv_transfer_manager`
+- **Modalities**: text (+ optional image) → text + image
+- **Notable**: unique CFG implementation — AR stage generates 3 prompt variants (positive, negative-text, negative-image), each producing KV caches that the DiT stage uses for classifier-free guidance. KV caches are transferred via `kv_transfer_manager`, not just embeddings
+
+### Pattern 3: AR + DiT (Omni) — Multi-Stage Audio
+
+These models have AR stages for understanding and codec generation, plus a DiT/generation stage for waveform synthesis.
+
+#### Qwen3-Omni-MoE (3-stage, flagship)
+
+```
+Stage 0 (Thinker)          Stage 1 (Talker)          Stage 2 (Code2Wav)
+┌──────────────────┐ hidden ┌──────────────────┐ RVQ  ┌──────────────────┐
+│ Qwen3OmniMoe...  │ states │ Qwen3OmniMoe...  │ codes│ Qwen3OmniMoe...  │
+│ worker: ar       │ ─────► │ worker: ar       │ ───► │ worker: gen      │
+│ output: latent   │thinker │ output: latent   │talker│ output: audio    │
+│ MoE, GPU 0      │2talker │ GPU 1, 60% mem   │2code │ GPU 1, 10% mem   │
+│ 90% mem          │        │                  │2wav  │                  │
+│ final: text      │        │ stop: [2150]     │      │                  │
+└──────────────────┘        └──────────────────┘      └──────────────────┘
+```
+
+- **Stage configs**: `stage_configs/qwen3_omni_moe.yaml` (sync), `qwen3_omni_moe_async_chunk.yaml` (streaming), `qwen3_omni_moe_multiconnector.yaml` (distributed)
+- **Stage input processor**: `stage_input_processors/qwen3_omni.py` — `thinker2talker()` extracts embedding layers "0" and "24" plus TTS special tokens (bos/eos/pad); `talker2code2wav()` transposes 8-layer RVQ codes and flattens
+- **Modalities**: text + image + video + audio → text + audio
+- **Notable**: MoE thinker/talker; async streaming variant chunks codec frames (25 frames/chunk) with sliding context window; Stage 0 emits both text (to user) and hidden states (to Stage 1)
+
+#### Qwen2.5-Omni (3-stage, dense)
+
+```
+Stage 0 (Thinker)          Stage 1 (Talker)          Stage 2 (Token2Wav)
+┌──────────────────┐ hidden ┌──────────────────┐ codec┌──────────────────┐
+│ Qwen2_5Omni...   │ states │ Qwen2_5Omni...   │ codes│ Qwen2_5Omni...   │
+│ worker: ar       │ ─────► │ worker: ar       │ ───► │ worker: gen      │
+│ output: latent   │thinker │ output: latent   │      │ output: audio    │
+│ GPU 0, 80% mem   │2talker │                  │      │                  │
+│ final: text      │        │                  │      │                  │
+└──────────────────┘        └──────────────────┘      └──────────────────┘
+```
+
+- **Stage configs**: `stage_configs/qwen2_5_omni.yaml`, `qwen2_5_omni_multiconnector.yaml` (distributed)
+- **Stage input processor**: `stage_input_processors/qwen2_5_omni.py` — `thinker2talker()` splits latent into prompt embeddings + generated tokens, creates talker prompt with special tokens (PAD=8292, START=8293, END=8294)
+- **Modalities**: multimodal → text + audio
+- **Notable**: dense model (not MoE); predecessor to Qwen3-Omni
+
+#### MiMo-Audio (2-stage, fused thinker+talker)
+
+```
+Stage 0 (Fused Thinker+Talker)        Stage 1 (Code2Wav)
+┌──────────────────────────┐   codec  ┌──────────────────┐
+│ MiMoAudioForCond...      │   codes  │ MiMoAudioToken2..│
+│ worker: ar               │ ───────► │ worker: gen      │
+│ model_stage:             │ llm2     │ output: audio    │
+│   fused_thinker_talker   │ code2wav │                  │
+│ output: latent           │          │                  │
+└──────────────────────────┘          └──────────────────┘
+```
+
+- **Stage configs**: `stage_configs/mimo_audio.yaml` (sync), `mimo_audio_async_chunk.yaml` (streaming)
+- **Stage input processor**: `stage_input_processors/mimo_audio.py` — `llm2code2wav()` extracts `code_predictor_codes`, removes zero-padded frames, flattens column-major; async variant accumulates chunks with sliding window
+- **Modalities**: text + audio → text + audio
+- **Notable**: fuses thinker and talker into a single AR stage (2-stage instead of 3-stage pipeline), simplifying serving at the cost of less stage-level parallelism
+
+#### Qwen3-TTS (2-stage, speech-only)
+
+```
+Stage 0 (Talker)                       Stage 1 (Code2Wav)
+┌──────────────────────────┐   audio  ┌──────────────────┐
+│ Qwen3TTSTalkerFor...     │   codes  │ Qwen3TTSCode2Wav │
+│ worker: ar               │ ───────► │ worker: gen      │
+│ output: latent           │ talker2  │ output: audio    │
+│                          │ code2wav │                  │
+└──────────────────────────┘          └──────────────────┘
+```
+
+- **Stage configs**: `stage_configs/qwen3_tts.yaml` (async), `qwen3_tts_batch.yaml` (batched, batch=4), `qwen3_tts_no_async_chunk.yaml` (sync)
+- **Stage input processor**: `stage_input_processors/qwen3_tts.py` — `talker2code2wav()` extracts 16-layer audio codes, filters EOS frames; async variant has two-phase streaming: initial small chunks for low TTFA (time-to-first-audio), then normal-sized chunks
+- **Modalities**: text → audio
+- **Notable**: no thinker stage (direct text → speech); 16-layer RVQ codes (vs 8-layer in Qwen3-Omni); batch mode supports concurrent TTS requests
+
+#### CosyVoice3 (2-stage, speech-only)
+
+```
+Stage 0 (Talker)                       Stage 1 (Code2Wav)
+┌──────────────────────────┐   speech ┌──────────────────┐
+│ CosyVoice3Model          │   tokens │ CosyVoice3Model  │
+│ worker: ar               │ ───────► │ worker: gen      │
+│ output: latent           │ text2flow│ output: audio    │
+│ gpu_mem: 0.4             │          │ gpu_mem: 0.2     │
+└──────────────────────────┘          └──────────────────┘
+```
+
+- **Stage config**: `stage_configs/cosyvoice3.yaml`
+- **Stage input processor**: `stage_input_processors/cosyvoice3.py` — `text2flow()` prepends original prompt token IDs to speech token output
+- **Modalities**: text → audio
+- **Notable**: lightweight pipeline (40% + 20% GPU memory); speech tokens are prepended with original text tokens for alignment
+
+### Summary Table
+
+| Model | Pattern | Stages | AR Worker | Gen Worker | Modalities | Config Variants |
+|-------|---------|--------|-----------|------------|------------|----------------|
+| GLM-Image | 1 (AR+DiT Main) | 2 | Thinker → prior tokens | DiT → image | text/image → image | single, distributed |
+| MammothModa2 | 1 (AR+DiT Main) | 2 (or 1) | AR → hidden states | DiT → image | multimodal → image | full pipeline, AR-only |
+| Hunyuan-Image-3 | 1 (AR+DiT Main) | 1 (AR only) | AR → latent | (external) | image+text → latent | MoE, TP=8 |
+| BAGEL | 2 (AR Main+DiT) | 2 | AR Main → text + KV caches | DiT refiner → image | text/image → text+image | single, distributed |
+| Qwen3-Omni-MoE | 3 (Omni) | 3 | Thinker → Talker → RVQ | Code2Wav → audio | any → text+audio | sync, async, distributed |
+| Qwen2.5-Omni | 3 (Omni) | 3 | Thinker → Talker → codec | Token2Wav → audio | multimodal → text+audio | single, distributed |
+| MiMo-Audio | 3 (Omni) | 2 | Fused thinker+talker → codec | Code2Wav → audio | text+audio → text+audio | sync, async |
+| Qwen3-TTS | 3 (Omni) | 2 | Talker → audio codes | Code2Wav → audio | text → audio | async, batch, sync |
+| CosyVoice3 | 3 (Omni) | 2 | Talker → speech tokens | Code2Wav → audio | text → audio | single |
+
+### Key Code Paths
+
+```
+vllm_omni/model_executor/
+├── stage_configs/              # YAML pipeline definitions (18 files)
+│   ├── bagel.yaml              # Pattern 2: AR(Main) + DiT with CFG
+│   ├── glm_image.yaml          # Pattern 1: AR + DiT(Main) with prior tokens
+│   ├── mammoth_moda2.yaml      # Pattern 1: AR + DiT(Main) with hidden states
+│   ├── hunyuan_image_3_moe.yaml # Pattern 1: AR-only (DiT external)
+│   ├── qwen3_omni_moe.yaml     # Pattern 3: 3-stage Omni
+│   ├── qwen2_5_omni.yaml       # Pattern 3: 3-stage Omni (dense)
+│   ├── mimo_audio.yaml         # Pattern 3: 2-stage fused Omni
+│   ├── qwen3_tts.yaml          # Pattern 3: 2-stage TTS
+│   └── cosyvoice3.yaml         # Pattern 3: 2-stage TTS
+├── stage_input_processors/     # Inter-stage data transforms (8 files)
+│   ├── bagel.py                # expand_cfg_prompts(), collect_cfg_kv_caches()
+│   ├── glm_image.py            # ar2diffusion() — prior token upsampling
+│   ├── mammoth_moda2.py        # ar2dit() — hidden state extraction + masking
+│   ├── qwen3_omni.py           # thinker2talker(), talker2code2wav() + async
+│   ├── qwen2_5_omni.py         # thinker2talker() — embedding split
+│   ├── mimo_audio.py           # llm2code2wav() — codec flattening
+│   ├── qwen3_tts.py            # talker2code2wav() — 16-layer RVQ + streaming
+│   └── cosyvoice3.py           # text2flow() — prefix prepend
+└── models/                     # Model implementations (8 directories)
+    ├── bagel/                  # AR thinker + DiT refiner
+    ├── glm_image/              # AR prior token generator
+    ├── mammoth_moda2/          # AR + DiT with MoE routing
+    ├── hunyuan_image3/         # AR comprehension (TP=8)
+    ├── qwen3_omni/             # MoE thinker + talker + code2wav
+    ├── qwen2_5_omni/           # Dense thinker + talker + token2wav
+    ├── mimo_audio/             # Fused thinker+talker + code2wav
+    ├── qwen3_tts/              # TTS talker + code2wav
+    └── cosyvoice3/             # TTS talker + code2wav
+```
+
 ## Related
 
 - [Unified Models](../vision_language/03_Unified_Models.md) — dual encoder vs unified encoder approaches that map to these patterns

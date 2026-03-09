@@ -1,0 +1,11 @@
+[project]
+name = "multimodal-labs"
+version = "0.1.0"
+description = "Hands-on scripts for learning visual encoders and VLMs"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "transformers",
+    "pillow",
+    "numpy",
+]

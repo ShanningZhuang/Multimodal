@@ -33,6 +33,7 @@ Visual Encoders
 | 2 | Vision Transformer | [02_ViT.md](02_ViT.md) | Patch embedding, positional encoding, ViT architecture |
 | 3 | Semantic Encoders | [03_Semantic_Encoders.md](03_Semantic_Encoders.md) | CLIP, SigLIP 2, DINOv2, WebSSL — contrastive & self-supervised |
 | 4 | VAE | [04_VAE.md](04_VAE.md) | Variational Autoencoders, SD-VAE, FLUX VAE, RAE |
+| 5 | Hands-On Lab | [05_Hands_On_Lab.md](05_Hands_On_Lab.md) | Trace VLM execution in vLLM — instrument CLIP, LLaVA, projectors |
 
 ## Key Insight: Unified Visual Representation
 
