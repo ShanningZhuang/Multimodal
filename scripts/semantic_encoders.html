@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantic Visual Encoders — CLIP, SigLIP, DINOv2</title>
+<style>
+:root {
+  --bg:#0b0d14; --s1:#141824; --s2:#1a2030; --s3:#212840;
+  --bdr:#283050; --tx:#e0e6f4; --dim:#6e7a9a;
+  --cyan:#22d3ee; --blue:#6c8cff; --purple:#a78bfa; --orange:#fb923c;
+  --green:#34d399; --pink:#f472b6; --red:#f87171; --yellow:#fbbf24;
+  --teal:#2dd4bf; --lime:#a3e635;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--tx);font-family:'Inter',-apple-system,sans-serif;line-height:1.65}
+.page{max-width:1300px;margin:0 auto;padding:44px 28px 90px}
+h1{font-size:2.5rem;font-weight:800;margin-bottom:6px;
+  background:linear-gradient(135deg,var(--cyan),var(--blue),var(--purple),var(--pink));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:var(--dim);font-size:1.05rem;margin-bottom:50px}
+h2{font-size:1.55rem;font-weight:700;margin:52px 0 6px}
+.sec-sub{color:var(--dim);font-size:.91rem;margin-bottom:20px}
+.tag{font-size:.72rem;font-weight:600;padding:3px 10px;border-radius:6px;display:inline-block;vertical-align:middle;margin-left:8px}
+
+.card{background:var(--s1);border:1px solid var(--bdr);border-radius:16px;padding:32px;margin-bottom:28px;overflow:hidden}
+.card.flush{padding:0}
+
+/* code */
+.cb{background:var(--s2);border-radius:10px;padding:16px 20px;font-family:'Fira Code','Courier New',monospace;font-size:.84rem;overflow-x:auto;margin:14px 0;border-left:3px solid var(--blue);line-height:1.7}
+.cb.cyan{border-left-color:var(--cyan)} .cb.orange{border-left-color:var(--orange)}
+.cb.green{border-left-color:var(--green)} .cb.purple{border-left-color:var(--purple)}
+.cb.pink{border-left-color:var(--pink)} .cb.yellow{border-left-color:var(--yellow)}
+.cm{color:var(--dim)}
+
+.info{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.2);border-radius:10px;padding:14px 18px;font-size:.88rem;color:var(--dim);margin:14px 0}
+.info b{color:var(--blue)}
+.info.warn{background:rgba(251,191,36,.06);border-color:rgba(251,191,36,.2)} .info.warn b{color:var(--yellow)}
+.info.green{background:rgba(52,211,153,.06);border-color:rgba(52,211,153,.2)} .info.green b{color:var(--green)}
+.info.pink{background:rgba(244,114,182,.06);border-color:rgba(244,114,182,.2)} .info.pink b{color:var(--pink)}
+.info.cyan{background:rgba(34,211,238,.06);border-color:rgba(34,211,238,.2)} .info.cyan b{color:var(--cyan)}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+@media(max-width:900px){.g3{grid-template-columns:1fr} .g2{grid-template-columns:1fr}}
+
+/* horizontal flow */
+.hflow{display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;padding:12px 0}
+.hf-box{background:var(--s2);border:1px solid var(--bdr);border-radius:10px;padding:12px 18px;text-align:center;min-width:90px}
+.hf-box .hl{font-weight:700;font-size:.88rem} .hf-box .hd{font-size:.72rem;color:var(--dim);margin-top:2px}
+.hf-arr{padding:0 6px;color:var(--dim);font-size:1.3rem}
+
+/* svg */
+.svg-wrap{width:100%;overflow-x:auto;display:flex;justify-content:center;padding:8px 0}
+svg text{font-family:'Inter',sans-serif}
+
+/* table */
+.tb{width:100%;border-collapse:collapse;margin:12px 0}
+.tb th,.tb td{padding:10px 14px;text-align:left;font-size:.85rem;border-bottom:1px solid var(--bdr)}
+.tb th{color:var(--dim);font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px}
+.mono{font-family:'Fira Code',monospace}
+
+/* badge */
+.badge{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:5px}
+
+/* big overview cards */
+.overview-row{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin:20px 0}
+.ov-card{flex:1;min-width:260px;max-width:380px;background:var(--s1);border:1px solid var(--bdr);border-radius:14px;padding:24px;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s}
+.ov-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.ov-card .ov-top{height:4px;position:absolute;top:0;left:0;right:0;border-radius:14px 14px 0 0}
+.ov-card h3{font-size:1.15rem;margin:8px 0 4px}
+.ov-card .ov-method{font-size:.82rem;color:var(--dim);margin-bottom:12px}
+.ov-card .ov-detail{font-size:.82rem;color:var(--dim);line-height:1.5}
+
+/* contrastive matrix */
+.matrix-wrap{display:flex;align-items:center;gap:28px;flex-wrap:wrap;justify-content:center}
+.matrix-vis{position:relative}
+.matrix-vis canvas{border-radius:8px}
+
+/* token strips */
+.toks{display:flex;gap:3px;align-items:center;flex-wrap:wrap;padding:6px 0}
+.tok{height:28px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;padding:0 6px;flex-shrink:0}
+
+/* scroll hint */
+.scroll-hint{text-align:center;color:var(--dim);font-size:.78rem;padding:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* dino augmentation boxes */
+.aug-pair{display:flex;gap:16px;align-items:center;flex-wrap:wrap;justify-content:center;margin:16px 0}
+.aug-box{width:140px;height:140px;border-radius:10px;position:relative;overflow:hidden;flex-shrink:0;border:2px solid var(--bdr)}
+.aug-box canvas{width:100%;height:100%;display:block}
+.aug-box .aug-label{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:4px 8px;font-size:.7rem;text-align:center}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Semantic Visual Encoders</h1>
+<p class="sub">CLIP, SigLIP, and DINOv2 — how vision models learn meaning from pixels, with or without language</p>
+
+<!-- ================================================================ -->
+<!-- OVERVIEW: THE THREE APPROACHES -->
+<!-- ================================================================ -->
+<h2 style="color:var(--blue)">The Big Picture: Three Approaches to Visual Understanding</h2>
+<p class="sec-sub">All use the same ViT backbone, but train it in fundamentally different ways</p>
+
+<div class="card flush" style="padding:16px 12px">
+  <div class="svg-wrap">
+    <svg width="1100" height="500" viewBox="0 0 1100 500">
+      <defs>
+        <marker id="ar" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#6e7a9a"/></marker>
+        <marker id="ar-c" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#22d3ee"/></marker>
+        <marker id="ar-o" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#fb923c"/></marker>
+        <marker id="ar-g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#34d399"/></marker>
+        <marker id="ar-p" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#a78bfa"/></marker>
+      </defs>
+
+      <!-- ---- Shared top: Image Input ---- -->
+      <rect x="440" y="20" width="180" height="50" rx="12" fill="#1a2030" stroke="var(--bdr)"/>
+      <text x="530" y="50" text-anchor="middle" font-size="14" font-weight="700" fill="var(--tx)">Input Image</text>
+
+      <!-- Three arrows down -->
+      <line x1="480" y1="70" x2="180" y2="120" stroke="#22d3ee" stroke-width="2" marker-end="url(#ar-c)"/>
+      <line x1="530" y1="70" x2="530" y2="120" stroke="#fb923c" stroke-width="2" marker-end="url(#ar-o)"/>
+      <line x1="580" y1="70" x2="880" y2="120" stroke="#34d399" stroke-width="2" marker-end="url(#ar-g)"/>
+
+      <!-- =============== CLIP (left) =============== -->
+      <rect x="30" y="95" width="340" height="388" rx="16" fill="rgba(34,211,238,.03)" stroke="rgba(34,211,238,.15)"/>
+      <text x="200" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#22d3ee">CLIP — Contrastive Learning</text>
+      <text x="200" y="138" text-anchor="middle" font-size="10" fill="var(--dim)">Language-supervised (400M image-text pairs)</text>
+
+      <!-- Image encoder -->
+      <rect x="60" y="156" width="130" height="56" rx="10" fill="rgba(34,211,238,.08)" stroke="rgba(34,211,238,.25)"/>
+      <text x="125" y="180" text-anchor="middle" font-size="11" font-weight="600" fill="#22d3ee">Image Encoder</text>
+      <text x="125" y="196" text-anchor="middle" font-size="9" fill="var(--dim)">(ViT-L/14)</text>
+
+      <!-- Text encoder -->
+      <rect x="220" y="156" width="130" height="56" rx="10" fill="rgba(108,140,255,.08)" stroke="rgba(108,140,255,.25)"/>
+      <text x="285" y="180" text-anchor="middle" font-size="11" font-weight="600" fill="#6c8cff">Text Encoder</text>
+      <text x="285" y="196" text-anchor="middle" font-size="9" fill="var(--dim)">(Transformer)</text>
+
+      <!-- Text input label -->
+      <rect x="230" y="126" width="110" height="24" rx="6" fill="var(--s2)" stroke="rgba(108,140,255,.2)"/>
+      <text x="285" y="143" text-anchor="middle" font-size="9" fill="#6c8cff">"a photo of a dog"</text>
+
+      <!-- arrows down -->
+      <line x1="125" y1="212" x2="125" y2="244" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#ar-c)"/>
+      <line x1="285" y1="212" x2="285" y2="244" stroke="#6c8cff" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <!-- embeddings -->
+      <rect x="80" y="250" width="90" height="32" rx="6" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.3)"/>
+      <text x="125" y="271" text-anchor="middle" font-size="10" font-weight="600" fill="#22d3ee">I_embed</text>
+      <rect x="240" y="250" width="90" height="32" rx="6" fill="rgba(108,140,255,.12)" stroke="rgba(108,140,255,.3)"/>
+      <text x="285" y="271" text-anchor="middle" font-size="10" font-weight="600" fill="#6c8cff">T_embed</text>
+
+      <!-- arrows to matrix -->
+      <line x1="125" y1="282" x2="170" y2="318" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+      <line x1="285" y1="282" x2="240" y2="318" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <!-- contrastive matrix -->
+      <rect x="145" y="318" width="120" height="80" rx="8" fill="rgba(251,191,36,.06)" stroke="rgba(251,191,36,.25)"/>
+      <text x="205" y="340" text-anchor="middle" font-size="10" font-weight="600" fill="var(--yellow)">Similarity Matrix</text>
+      <!-- mini diagonal -->
+      <rect x="162" y="348" width="14" height="14" rx="2" fill="rgba(52,211,153,.4)"/>
+      <rect x="180" y="348" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="198" y="348" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="216" y="348" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="234" y="348" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="162" y="366" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="180" y="366" width="14" height="14" rx="2" fill="rgba(52,211,153,.4)"/>
+      <rect x="198" y="366" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="216" y="366" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="234" y="366" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="162" y="384" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="180" y="384" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="198" y="384" width="14" height="14" rx="2" fill="rgba(52,211,153,.4)"/>
+      <rect x="216" y="384" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+      <rect x="234" y="384" width="14" height="14" rx="2" fill="rgba(255,255,255,.05)"/>
+
+      <!-- loss label -->
+      <text x="205" y="418" text-anchor="middle" font-size="10" font-weight="600" fill="var(--yellow)">InfoNCE Loss</text>
+      <text x="205" y="434" text-anchor="middle" font-size="9" fill="var(--dim)">maximize diagonal</text>
+      <text x="205" y="448" text-anchor="middle" font-size="9" fill="var(--dim)">minimize off-diagonal</text>
+
+      <!-- Key properties -->
+      <text x="200" y="470" text-anchor="middle" font-size="9" fill="var(--green)">Text-aligned | Zero-shot | VLM backbone</text>
+
+      <!-- =============== SigLIP (center) =============== -->
+      <rect x="390" y="95" width="280" height="388" rx="16" fill="rgba(251,146,60,.03)" stroke="rgba(251,146,60,.15)"/>
+      <text x="530" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#fb923c">SigLIP — Sigmoid Loss</text>
+      <text x="530" y="138" text-anchor="middle" font-size="10" fill="var(--dim)">Language-supervised (improved loss)</text>
+
+      <!-- Image encoder -->
+      <rect x="410" y="156" width="110" height="56" rx="10" fill="rgba(251,146,60,.08)" stroke="rgba(251,146,60,.25)"/>
+      <text x="465" y="180" text-anchor="middle" font-size="11" font-weight="600" fill="#fb923c">Image Enc</text>
+      <text x="465" y="196" text-anchor="middle" font-size="9" fill="var(--dim)">(ViT-So400m)</text>
+
+      <!-- Text encoder -->
+      <rect x="540" y="156" width="110" height="56" rx="10" fill="rgba(251,146,60,.08)" stroke="rgba(251,146,60,.25)"/>
+      <text x="595" y="180" text-anchor="middle" font-size="11" font-weight="600" fill="#fb923c">Text Enc</text>
+      <text x="595" y="196" text-anchor="middle" font-size="9" fill="var(--dim)">(Transformer)</text>
+
+      <!-- arrows down -->
+      <line x1="465" y1="212" x2="465" y2="244" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ar-o)"/>
+      <line x1="595" y1="212" x2="595" y2="244" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ar-o)"/>
+
+      <!-- embeddings -->
+      <rect x="428" y="250" width="74" height="32" rx="6" fill="rgba(251,146,60,.12)" stroke="rgba(251,146,60,.3)"/>
+      <text x="465" y="271" text-anchor="middle" font-size="10" font-weight="600" fill="#fb923c">I_emb</text>
+      <rect x="558" y="250" width="74" height="32" rx="6" fill="rgba(251,146,60,.12)" stroke="rgba(251,146,60,.3)"/>
+      <text x="595" y="271" text-anchor="middle" font-size="10" font-weight="600" fill="#fb923c">T_emb</text>
+
+      <line x1="465" y1="282" x2="510" y2="314" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+      <line x1="595" y1="282" x2="550" y2="314" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <!-- per-pair comparison -->
+      <rect x="460" y="314" width="140" height="80" rx="8" fill="rgba(251,146,60,.06)" stroke="rgba(251,146,60,.25)"/>
+      <text x="530" y="336" text-anchor="middle" font-size="10" font-weight="600" fill="var(--orange)">Per-Pair Sigmoid</text>
+
+      <!-- pairs -->
+      <text x="530" y="356" text-anchor="middle" font-size="9" fill="var(--green)">match → σ(sim) → 1</text>
+      <text x="530" y="372" text-anchor="middle" font-size="9" fill="var(--red)">no match → σ(sim) → 0</text>
+      <text x="530" y="388" text-anchor="middle" font-size="9" fill="var(--dim)">independent per pair!</text>
+
+      <!-- loss -->
+      <text x="530" y="418" text-anchor="middle" font-size="10" font-weight="600" fill="var(--orange)">Binary Sigmoid Loss</text>
+      <text x="530" y="434" text-anchor="middle" font-size="9" fill="var(--dim)">no batch normalization</text>
+      <text x="530" y="448" text-anchor="middle" font-size="9" fill="var(--dim)">works at any batch size</text>
+
+      <text x="530" y="470" text-anchor="middle" font-size="9" fill="var(--green)">Scalable | State-of-art VLM backbone</text>
+
+      <!-- =============== DINOv2 (right) =============== -->
+      <rect x="690" y="95" width="380" height="388" rx="16" fill="rgba(52,211,153,.03)" stroke="rgba(52,211,153,.15)"/>
+      <text x="880" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#34d399">DINOv2 — Self-Distillation</text>
+      <text x="880" y="138" text-anchor="middle" font-size="10" fill="var(--dim)">Self-supervised (images only, no text!)</text>
+
+      <!-- Two views -->
+      <rect x="716" y="156" width="100" height="50" rx="8" fill="rgba(52,211,153,.08)" stroke="rgba(52,211,153,.25)"/>
+      <text x="766" y="177" text-anchor="middle" font-size="10" font-weight="600" fill="#34d399">View 1</text>
+      <text x="766" y="192" text-anchor="middle" font-size="8" fill="var(--dim)">random crop+aug</text>
+
+      <rect x="940" y="156" width="100" height="50" rx="8" fill="rgba(52,211,153,.08)" stroke="rgba(52,211,153,.25)"/>
+      <text x="990" y="177" text-anchor="middle" font-size="10" font-weight="600" fill="#34d399">View 2</text>
+      <text x="990" y="192" text-anchor="middle" font-size="8" fill="var(--dim)">different aug</text>
+
+      <!-- student and teacher -->
+      <line x1="766" y1="206" x2="766" y2="236" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar-g)"/>
+      <line x1="990" y1="206" x2="990" y2="236" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar-g)"/>
+
+      <rect x="710" y="240" width="112" height="56" rx="10" fill="rgba(52,211,153,.1)" stroke="rgba(52,211,153,.35)" stroke-width="2"/>
+      <text x="766" y="264" text-anchor="middle" font-size="11" font-weight="700" fill="#34d399">Student</text>
+      <text x="766" y="280" text-anchor="middle" font-size="9" fill="var(--dim)">(ViT, trainable)</text>
+
+      <rect x="934" y="240" width="112" height="56" rx="10" fill="rgba(167,139,250,.08)" stroke="rgba(167,139,250,.25)"/>
+      <text x="990" y="264" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Teacher</text>
+      <text x="990" y="280" text-anchor="middle" font-size="9" fill="var(--dim)">(EMA of student)</text>
+
+      <!-- EMA arrow -->
+      <path d="M 822 268 Q 878 230 934 268" fill="none" stroke="var(--dim)" stroke-width="1" stroke-dasharray="4"/>
+      <text x="878" y="238" text-anchor="middle" font-size="8" fill="var(--dim)">EMA update</text>
+
+      <!-- arrows down to outputs -->
+      <line x1="766" y1="296" x2="766" y2="326" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar-g)"/>
+      <line x1="990" y1="296" x2="990" y2="326" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ar-p)"/>
+
+      <rect x="728" y="330" width="76" height="28" rx="6" fill="rgba(52,211,153,.12)" stroke="rgba(52,211,153,.3)"/>
+      <text x="766" y="349" text-anchor="middle" font-size="10" font-weight="600" fill="#34d399">s_out</text>
+      <rect x="952" y="330" width="76" height="28" rx="6" fill="rgba(167,139,250,.12)" stroke="rgba(167,139,250,.3)"/>
+      <text x="990" y="349" text-anchor="middle" font-size="10" font-weight="600" fill="#a78bfa">t_out</text>
+
+      <!-- loss connection -->
+      <line x1="804" y1="344" x2="952" y2="344" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="4"/>
+      <rect x="840" y="372" width="136" height="36" rx="8" fill="rgba(251,191,36,.06)" stroke="rgba(251,191,36,.25)"/>
+      <text x="908" y="395" text-anchor="middle" font-size="10" font-weight="600" fill="var(--yellow)">Cross-Entropy Loss</text>
+      <line x1="878" y1="360" x2="878" y2="372" stroke="var(--yellow)" stroke-width="1"/>
+      <text x="880" y="425" text-anchor="middle" font-size="9" fill="var(--dim)">student output should</text>
+      <text x="880" y="439" text-anchor="middle" font-size="9" fill="var(--dim)">match teacher output</text>
+
+      <text x="880" y="470" text-anchor="middle" font-size="9" fill="var(--green)">No text bias | Dense prediction | Spatial features</text>
+    </svg>
+  </div>
+  <div class="scroll-hint">← scroll if needed →</div>
+</div>
+
+<!-- ================================================================ -->
+<!-- SECTION: KEY INSIGHT -->
+<!-- ================================================================ -->
+<div class="card" style="margin-top:28px">
+  <div style="font-size:1.1rem;font-weight:700;margin-bottom:12px;color:var(--yellow)">The Core Idea: What Makes Them "Semantic"?</div>
+  <p style="color:var(--dim);font-size:.92rem;margin-bottom:16px">
+    All three use a <strong style="color:var(--tx)">ViT backbone</strong> (the same architecture you already know).
+    The magic is in <strong style="color:var(--yellow)">what they train against</strong>.
+    A ViT trained on ImageNet classification learns "this is a cat". A semantic encoder learns
+    <em>much richer representations</em> because of its training signal:
+  </p>
+  <div class="g3">
+    <div class="info cyan">
+      <b>CLIP</b> learns features aligned with <em>natural language</em>.
+      Its patch tokens "understand" arbitrary text concepts because they were trained to match
+      400M image-text descriptions.
+    </div>
+    <div class="info" style="background:rgba(251,146,60,.06);border-color:rgba(251,146,60,.2)">
+      <b style="color:var(--orange)">SigLIP</b> does the same as CLIP but with a better loss function.
+      The sigmoid loss removes batch-size dependency, enabling more efficient training at scale.
+    </div>
+    <div class="info green">
+      <b>DINOv2</b> learns features that capture <em>visual structure</em> — edges, textures, objects,
+      spatial layout — without any language. Its features excel at dense spatial tasks.
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- CLIP DEEP DIVE -->
+<!-- ================================================================ -->
+<h2 style="color:var(--cyan)">CLIP — Contrastive Language-Image Pretraining
+  <span class="tag" style="background:rgba(34,211,238,.12);color:var(--cyan)">DEEP DIVE</span>
+</h2>
+<p class="sec-sub">How CLIP trains two encoders to put images and text in the same embedding space</p>
+
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:16px;color:var(--cyan)">Dual Encoder Architecture</div>
+  <div class="svg-wrap">
+    <svg width="900" height="380" viewBox="0 0 900 380">
+      <!-- Image side -->
+      <rect x="30" y="20" width="360" height="340" rx="14" fill="rgba(34,211,238,.03)" stroke="rgba(34,211,238,.1)"/>
+      <text x="210" y="46" text-anchor="middle" font-size="12" font-weight="700" fill="#22d3ee">IMAGE ENCODER</text>
+
+      <rect x="60" y="62" width="120" height="40" rx="8" fill="var(--s2)" stroke="var(--bdr)"/>
+      <text x="120" y="87" text-anchor="middle" font-size="10" fill="var(--tx)">Input Image</text>
+
+      <line x1="120" y1="102" x2="120" y2="122" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="50" y="126" width="140" height="36" rx="8" fill="rgba(34,211,238,.08)" stroke="rgba(34,211,238,.2)"/>
+      <text x="120" y="149" text-anchor="middle" font-size="10" fill="#22d3ee" font-weight="600">Patch Embed + Pos</text>
+
+      <line x1="120" y1="162" x2="120" y2="178" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="40" y="182" width="160" height="48" rx="8" fill="rgba(34,211,238,.08)" stroke="rgba(34,211,238,.2)"/>
+      <text x="120" y="204" text-anchor="middle" font-size="11" fill="#22d3ee" font-weight="600">ViT Transformer</text>
+      <text x="120" y="220" text-anchor="middle" font-size="9" fill="var(--dim)">24 layers self-attention</text>
+
+      <line x1="120" y1="230" x2="120" y2="250" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="60" y="254" width="120" height="32" rx="6" fill="rgba(244,114,182,.1)" stroke="rgba(244,114,182,.25)"/>
+      <text x="120" y="275" text-anchor="middle" font-size="10" fill="#f472b6" font-weight="600">[CLS] token</text>
+
+      <line x1="120" y1="286" x2="120" y2="306" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="44" y="310" width="152" height="36" rx="8" fill="rgba(34,211,238,.15)" stroke="rgba(34,211,238,.35)" stroke-width="1.5"/>
+      <text x="120" y="333" text-anchor="middle" font-size="11" fill="#22d3ee" font-weight="700">Image Embedding</text>
+      <text x="230" y="333" font-size="9" fill="var(--yellow)" font-family="'Fira Code',monospace">(768-d)</text>
+
+      <!-- projection line -->
+      <text x="270" y="275" font-size="9" fill="var(--dim)">Linear</text>
+      <text x="270" y="290" font-size="9" fill="var(--dim)">Projection</text>
+      <line x1="180" y1="270" x2="220" y2="270" stroke="var(--dim)" stroke-width="1"/>
+      <line x1="220" y1="270" x2="220" y2="320" stroke="var(--dim)" stroke-width="1"/>
+      <line x1="196" y1="328" x2="220" y2="328" stroke="var(--dim)" stroke-width="1"/>
+
+      <!-- Text side -->
+      <rect x="430" y="20" width="440" height="340" rx="14" fill="rgba(108,140,255,.03)" stroke="rgba(108,140,255,.1)"/>
+      <text x="650" y="46" text-anchor="middle" font-size="12" font-weight="700" fill="#6c8cff">TEXT ENCODER</text>
+
+      <rect x="500" y="62" width="180" height="40" rx="8" fill="var(--s2)" stroke="var(--bdr)"/>
+      <text x="590" y="82" text-anchor="middle" font-size="10" fill="var(--tx)">"a photo of a dog"</text>
+
+      <line x1="590" y1="102" x2="590" y2="122" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="510" y="126" width="160" height="36" rx="8" fill="rgba(108,140,255,.08)" stroke="rgba(108,140,255,.2)"/>
+      <text x="590" y="149" text-anchor="middle" font-size="10" fill="#6c8cff" font-weight="600">BPE Tokenize + Embed</text>
+
+      <line x1="590" y1="162" x2="590" y2="178" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="500" y="182" width="180" height="48" rx="8" fill="rgba(108,140,255,.08)" stroke="rgba(108,140,255,.2)"/>
+      <text x="590" y="204" text-anchor="middle" font-size="11" fill="#6c8cff" font-weight="600">Text Transformer</text>
+      <text x="590" y="220" text-anchor="middle" font-size="9" fill="var(--dim)">12 layers, causal attention</text>
+
+      <line x1="590" y1="230" x2="590" y2="250" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="530" y="254" width="120" height="32" rx="6" fill="rgba(244,114,182,.1)" stroke="rgba(244,114,182,.25)"/>
+      <text x="590" y="275" text-anchor="middle" font-size="10" fill="#f472b6" font-weight="600">[EOS] token</text>
+
+      <line x1="590" y1="286" x2="590" y2="306" stroke="var(--dim)" stroke-width="1" marker-end="url(#ar)"/>
+
+      <rect x="514" y="310" width="152" height="36" rx="8" fill="rgba(108,140,255,.15)" stroke="rgba(108,140,255,.35)" stroke-width="1.5"/>
+      <text x="590" y="333" text-anchor="middle" font-size="11" fill="#6c8cff" font-weight="700">Text Embedding</text>
+      <text x="700" y="333" font-size="9" fill="var(--yellow)" font-family="'Fira Code',monospace">(768-d)</text>
+
+      <!-- projection note -->
+      <text x="740" y="275" font-size="9" fill="var(--dim)">Linear</text>
+      <text x="740" y="290" font-size="9" fill="var(--dim)">Projection</text>
+      <line x1="650" y1="270" x2="690" y2="270" stroke="var(--dim)" stroke-width="1"/>
+      <line x1="690" y1="270" x2="690" y2="320" stroke="var(--dim)" stroke-width="1"/>
+      <line x1="666" y1="328" x2="690" y2="328" stroke="var(--dim)" stroke-width="1"/>
+
+      <!-- Key difference callout -->
+      <rect x="720" y="62" width="140" height="90" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.2)"/>
+      <text x="790" y="82" text-anchor="middle" font-size="9" font-weight="600" fill="var(--purple)">Key difference:</text>
+      <text x="790" y="98" text-anchor="middle" font-size="9" fill="var(--dim)">Text uses causal</text>
+      <text x="790" y="112" text-anchor="middle" font-size="9" fill="var(--dim)">attention (like GPT)</text>
+      <text x="790" y="130" text-anchor="middle" font-size="9" fill="var(--dim)">Image uses full</text>
+      <text x="790" y="144" text-anchor="middle" font-size="9" fill="var(--dim)">bidirectional attn</text>
+    </svg>
+  </div>
+
+  <div class="info cyan" style="margin-top:12px">
+    <b>Both encoders are independent.</b> They share no weights. The image encoder is a ViT.
+    The text encoder is a separate GPT-like transformer. Both produce a single embedding vector
+    (from [CLS] and [EOS] respectively), then a linear projection maps them into a
+    <em>shared 768-d space</em> where cosine similarity is computed.
+  </div>
+</div>
+
+<!-- CONTRASTIVE MATRIX DETAIL -->
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:16px;color:var(--yellow)">The Contrastive Loss — What Makes CLIP Learn</div>
+
+  <div class="matrix-wrap">
+    <div class="matrix-vis">
+      <canvas id="matrixCanvas" width="260" height="260"></canvas>
+      <div style="font-size:.72rem;color:var(--dim);text-align:center;margin-top:6px">
+        Batch of 8: similarity matrix I @ T<sup>T</sup>
+      </div>
+    </div>
+    <div style="max-width:480px">
+      <p style="color:var(--dim);font-size:.9rem;margin-bottom:14px">
+        Given a batch of N image-text pairs, CLIP computes cosine similarity between
+        <strong style="color:var(--tx)">every image</strong> and <strong style="color:var(--tx)">every text</strong>
+        — producing an N×N matrix.
+      </p>
+      <div class="cb yellow" style="font-size:.82rem">
+<span class="cm"># For batch of N image-text pairs:</span>
+I = image_encoder(images)  <span class="cm"># (N, 768)</span>
+T = text_encoder(texts)    <span class="cm"># (N, 768)</span>
+
+<span class="cm"># Normalize to unit vectors</span>
+I = I / I.norm(dim=-1, keepdim=True)
+T = T / T.norm(dim=-1, keepdim=True)
+
+<span class="cm"># Cosine similarity matrix</span>
+logits = I @ T.T * exp(temperature)  <span class="cm"># (N, N)</span>
+
+<span class="cm"># The diagonal = matching pairs (should be HIGH)</span>
+<span class="cm"># Off-diagonal = non-matching (should be LOW)</span>
+
+labels = arange(N)  <span class="cm"># [0, 1, 2, ..., N-1]</span>
+loss_i2t = cross_entropy(logits, labels)
+loss_t2i = cross_entropy(logits.T, labels)
+loss = (loss_i2t + loss_t2i) / 2
+      </div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-top:20px">
+    <div class="info">
+      <b>Image → Text direction:</b> For each image (row), the correct text should have the
+      highest similarity. Softmax cross-entropy treats each row as a classification problem:
+      "which of the N texts matches this image?"
+    </div>
+    <div class="info">
+      <b>Text → Image direction:</b> Symmetrically, for each text (column), the correct image
+      should score highest. Both directions are averaged. This ensures the alignment is bidirectional.
+    </div>
+  </div>
+
+  <div class="info warn" style="margin-top:8px">
+    <b>Why large batches matter for CLIP:</b> The softmax normalizes across the entire batch.
+    With N=32,768 (CLIP's actual batch size), each image has 32,767 negative texts to distinguish from.
+    More negatives = harder task = better representations. This is also CLIP's weakness — it
+    <em>needs</em> massive batches.
+  </div>
+</div>
+
+<!-- CLIP output: what VLMs use -->
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:14px;color:var(--cyan)">What CLIP Gives to VLMs</div>
+  <div class="svg-wrap">
+    <svg width="800" height="200" viewBox="0 0 800 200">
+      <!-- ViT output -->
+      <rect x="20" y="30" width="200" height="60" rx="10" fill="rgba(34,211,238,.08)" stroke="rgba(34,211,238,.2)"/>
+      <text x="120" y="56" text-anchor="middle" font-size="11" font-weight="600" fill="#22d3ee">ViT Last Layers</text>
+      <text x="120" y="74" text-anchor="middle" font-size="9" fill="var(--dim)">(577, 1024) per layer</text>
+
+      <!-- two paths -->
+      <line x1="220" y1="45" x2="320" y2="30" stroke="var(--dim)" stroke-width="1.5" marker-end="url(#ar)"/>
+      <line x1="220" y1="75" x2="320" y2="130" stroke="#22d3ee" stroke-width="2" marker-end="url(#ar-c)"/>
+
+      <!-- CLIP's own use: [CLS] -->
+      <rect x="330" y="10" width="200" height="50" rx="8" fill="rgba(244,114,182,.06)" stroke="rgba(244,114,182,.2)"/>
+      <text x="430" y="32" text-anchor="middle" font-size="10" font-weight="600" fill="#f472b6">[CLS] → Linear → 768-d</text>
+      <text x="430" y="48" text-anchor="middle" font-size="9" fill="var(--dim)">CLIP's own contrastive objective</text>
+
+      <!-- VLM use: patch tokens -->
+      <rect x="330" y="110" width="200" height="60" rx="8" fill="rgba(34,211,238,.1)" stroke="rgba(34,211,238,.3)" stroke-width="1.5"/>
+      <text x="430" y="134" text-anchor="middle" font-size="10" font-weight="700" fill="#22d3ee">Layer -2 patch tokens</text>
+      <text x="430" y="152" text-anchor="middle" font-size="9" fill="var(--dim)">(576, 1024) — drop [CLS]</text>
+
+      <line x1="530" y1="140" x2="600" y2="140" stroke="#fb923c" stroke-width="2" marker-end="url(#ar-o)"/>
+
+      <rect x="610" y="118" width="160" height="44" rx="8" fill="rgba(251,146,60,.1)" stroke="rgba(251,146,60,.3)"/>
+      <text x="690" y="138" text-anchor="middle" font-size="10" font-weight="600" fill="#fb923c">MLP Projector</text>
+      <text x="690" y="152" text-anchor="middle" font-size="9" fill="var(--dim)">→ (576, 4096) → LLM</text>
+
+      <!-- labels -->
+      <text x="580" y="36" font-size="9" fill="var(--dim)">Used by CLIP itself</text>
+      <text x="580" y="106" font-size="9" fill="var(--cyan)" font-weight="600">Used by VLMs (LLaVA etc.)</text>
+    </svg>
+  </div>
+  <div class="info">
+    <b>CLIP was never designed for VLMs!</b> It was built for image-text matching using [CLS].
+    VLMs repurpose the <em>intermediate</em> patch tokens, which happen to contain rich, spatially-grounded,
+    semantically-meaningful features — a lucky byproduct of contrastive training with text.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- SigLIP SECTION -->
+<!-- ================================================================ -->
+<h2 style="color:var(--orange)">SigLIP — The Better Loss
+  <span class="tag" style="background:rgba(251,146,60,.12);color:var(--orange)">IMPROVED CLIP</span>
+</h2>
+<p class="sec-sub">Same dual-encoder idea, but sigmoid loss removes the batch-size dependency</p>
+
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:14px;color:var(--orange)">CLIP Loss vs SigLIP Loss</div>
+
+  <div class="svg-wrap">
+    <svg width="860" height="310" viewBox="0 0 860 310">
+      <!-- CLIP side -->
+      <rect x="20" y="10" width="390" height="290" rx="14" fill="rgba(34,211,238,.03)" stroke="rgba(34,211,238,.12)"/>
+      <text x="215" y="36" text-anchor="middle" font-size="13" font-weight="700" fill="#22d3ee">CLIP: Softmax Loss</text>
+
+      <!-- Matrix -->
+      <g transform="translate(60,55)">
+        <rect width="160" height="160" rx="6" fill="rgba(0,0,0,.2)" stroke="var(--bdr)"/>
+        <!-- row labels -->
+        <text x="-10" y="25" text-anchor="end" font-size="9" fill="var(--dim)">I₀</text>
+        <text x="-10" y="65" text-anchor="end" font-size="9" fill="var(--dim)">I₁</text>
+        <text x="-10" y="105" text-anchor="end" font-size="9" fill="var(--dim)">I₂</text>
+        <text x="-10" y="145" text-anchor="end" font-size="9" fill="var(--dim)">I₃</text>
+        <!-- col labels -->
+        <text x="20" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₀</text>
+        <text x="60" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₁</text>
+        <text x="100" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₂</text>
+        <text x="140" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₃</text>
+        <!-- cells — softmax rows -->
+        <rect x="4" y="8" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="20" y="29" text-anchor="middle" font-size="8" fill="white" font-weight="600">.91</text>
+        <rect x="44" y="8" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="60" y="29" text-anchor="middle" font-size="8" fill="var(--dim)">.03</text>
+        <rect x="84" y="8" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="100" y="29" text-anchor="middle" font-size="8" fill="var(--dim)">.02</text>
+        <rect x="124" y="8" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="140" y="29" text-anchor="middle" font-size="8" fill="var(--dim)">.04</text>
+
+        <rect x="4" y="48" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="20" y="69" text-anchor="middle" font-size="8" fill="var(--dim)">.01</text>
+        <rect x="44" y="48" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="60" y="69" text-anchor="middle" font-size="8" fill="white" font-weight="600">.93</text>
+        <rect x="84" y="48" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="100" y="69" text-anchor="middle" font-size="8" fill="var(--dim)">.04</text>
+        <rect x="124" y="48" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="140" y="69" text-anchor="middle" font-size="8" fill="var(--dim)">.02</text>
+
+        <rect x="4" y="88" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="20" y="109" text-anchor="middle" font-size="8" fill="var(--dim)">.05</text>
+        <rect x="44" y="88" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="60" y="109" text-anchor="middle" font-size="8" fill="var(--dim)">.02</text>
+        <rect x="84" y="88" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="100" y="109" text-anchor="middle" font-size="8" fill="white" font-weight="600">.88</text>
+        <rect x="124" y="88" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="140" y="109" text-anchor="middle" font-size="8" fill="var(--dim)">.05</text>
+
+        <rect x="4" y="128" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="20" y="149" text-anchor="middle" font-size="8" fill="var(--dim)">.03</text>
+        <rect x="44" y="128" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="60" y="149" text-anchor="middle" font-size="8" fill="var(--dim)">.01</text>
+        <rect x="84" y="128" width="32" height="32" rx="4" fill="rgba(255,80,80,.1)"/><text x="100" y="149" text-anchor="middle" font-size="8" fill="var(--dim)">.06</text>
+        <rect x="124" y="128" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="140" y="149" text-anchor="middle" font-size="8" fill="white" font-weight="600">.90</text>
+
+        <!-- arrow: softmax along row -->
+        <text x="180" y="28" font-size="8" fill="var(--cyan)">← softmax</text>
+        <text x="180" y="42" font-size="8" fill="var(--cyan)">  per row</text>
+      </g>
+
+      <text x="215" y="240" text-anchor="middle" font-size="10" fill="var(--dim)">Each row sums to 1 (softmax)</text>
+      <text x="215" y="256" text-anchor="middle" font-size="10" fill="var(--red)">Requires ALL negatives in batch</text>
+      <text x="215" y="274" text-anchor="middle" font-size="10" fill="var(--dim)">Must sync across GPUs for large batches</text>
+
+      <!-- SigLIP side -->
+      <rect x="440" y="10" width="400" height="290" rx="14" fill="rgba(251,146,60,.03)" stroke="rgba(251,146,60,.12)"/>
+      <text x="640" y="36" text-anchor="middle" font-size="13" font-weight="700" fill="#fb923c">SigLIP: Sigmoid Loss</text>
+
+      <g transform="translate(480,55)">
+        <rect width="160" height="160" rx="6" fill="rgba(0,0,0,.2)" stroke="var(--bdr)"/>
+        <text x="-10" y="25" text-anchor="end" font-size="9" fill="var(--dim)">I₀</text>
+        <text x="-10" y="65" text-anchor="end" font-size="9" fill="var(--dim)">I₁</text>
+        <text x="-10" y="105" text-anchor="end" font-size="9" fill="var(--dim)">I₂</text>
+        <text x="-10" y="145" text-anchor="end" font-size="9" fill="var(--dim)">I₃</text>
+        <text x="20" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₀</text>
+        <text x="60" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₁</text>
+        <text x="100" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₂</text>
+        <text x="140" y="-4" text-anchor="middle" font-size="9" fill="var(--dim)">T₃</text>
+        <!-- each cell is independent sigmoid -->
+        <rect x="4" y="8" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="20" y="29" text-anchor="middle" font-size="8" fill="white" font-weight="600">+1</text>
+        <rect x="44" y="8" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="60" y="29" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="84" y="8" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="100" y="29" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="124" y="8" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="140" y="29" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+
+        <rect x="4" y="48" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="20" y="69" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="44" y="48" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="60" y="69" text-anchor="middle" font-size="8" fill="white" font-weight="600">+1</text>
+        <rect x="84" y="48" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="100" y="69" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="124" y="48" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="140" y="69" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+
+        <rect x="4" y="88" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="20" y="109" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="44" y="88" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="60" y="109" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="84" y="88" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="100" y="109" text-anchor="middle" font-size="8" fill="white" font-weight="600">+1</text>
+        <rect x="124" y="88" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="140" y="109" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+
+        <rect x="4" y="128" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="20" y="149" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="44" y="128" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="60" y="149" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="84" y="128" width="32" height="32" rx="4" fill="rgba(248,113,113,.25)"/><text x="100" y="149" text-anchor="middle" font-size="8" fill="var(--red)">-1</text>
+        <rect x="124" y="128" width="32" height="32" rx="4" fill="rgba(52,211,153,.5)"/><text x="140" y="149" text-anchor="middle" font-size="8" fill="white" font-weight="600">+1</text>
+
+        <text x="180" y="28" font-size="8" fill="var(--orange)">← each cell is</text>
+        <text x="180" y="42" font-size="8" fill="var(--orange)">  independent!</text>
+      </g>
+
+      <text x="640" y="240" text-anchor="middle" font-size="10" fill="var(--dim)">Each cell: binary classification (match or not?)</text>
+      <text x="640" y="256" text-anchor="middle" font-size="10" fill="var(--green)">No cross-pair dependency</text>
+      <text x="640" y="274" text-anchor="middle" font-size="10" fill="var(--dim)">Works with any batch size, no global sync</text>
+    </svg>
+  </div>
+
+  <div class="cb orange" style="margin-top:16px">
+<span class="cm"># SigLIP loss — beautifully simple</span>
+logits = I @ T.T * temperature + bias  <span class="cm"># (N, N)</span>
+labels = 2 * eye(N) - 1               <span class="cm"># +1 on diagonal, -1 off-diagonal</span>
+loss = -logsigmoid(labels * logits).mean()
+
+<span class="cm"># For a matching pair: labels=+1, want sigmoid(logit)→1</span>
+<span class="cm"># For non-matching:   labels=-1, want sigmoid(logit)→0</span>
+<span class="cm"># Each cell is an independent binary classification!</span>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- DINOv2 SECTION -->
+<!-- ================================================================ -->
+<h2 style="color:var(--green)">DINOv2 — Self-Supervised, No Text Needed
+  <span class="tag" style="background:rgba(52,211,153,.12);color:var(--green)">SELF-SUPERVISED</span>
+</h2>
+<p class="sec-sub">Learns visual features through self-distillation: a student learns to match a teacher's view of augmented images</p>
+
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:16px;color:var(--green)">Self-Distillation Training</div>
+  <div class="svg-wrap">
+    <svg width="900" height="440" viewBox="0 0 900 440">
+      <!-- Original image -->
+      <rect x="350" y="10" width="160" height="50" rx="10" fill="var(--s2)" stroke="var(--bdr)"/>
+      <text x="430" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="var(--tx)">Original Image</text>
+
+      <!-- Two augmentation arrows -->
+      <line x1="390" y1="60" x2="180" y2="100" stroke="var(--dim)" stroke-width="1.5" marker-end="url(#ar)"/>
+      <line x1="470" y1="60" x2="680" y2="100" stroke="var(--dim)" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <text x="270" y="75" text-anchor="middle" font-size="9" fill="var(--dim)">random crop + color jitter</text>
+      <text x="590" y="75" text-anchor="middle" font-size="9" fill="var(--dim)">different random crop + flip</text>
+
+      <!-- View 1 -->
+      <rect x="100" y="105" width="160" height="60" rx="10" fill="rgba(52,211,153,.06)" stroke="rgba(52,211,153,.2)"/>
+      <text x="180" y="130" text-anchor="middle" font-size="11" font-weight="600" fill="#34d399">View 1 (global)</text>
+      <text x="180" y="150" text-anchor="middle" font-size="9" fill="var(--dim)">large crop (>50% of image)</text>
+
+      <!-- View 2 -->
+      <rect x="600" y="105" width="160" height="60" rx="10" fill="rgba(52,211,153,.06)" stroke="rgba(52,211,153,.2)"/>
+      <text x="680" y="130" text-anchor="middle" font-size="11" font-weight="600" fill="#34d399">View 2 (global)</text>
+      <text x="680" y="150" text-anchor="middle" font-size="9" fill="var(--dim)">different large crop</text>
+
+      <!-- Local crops note -->
+      <rect x="320" y="105" width="220" height="50" rx="8" fill="rgba(167,139,250,.04)" stroke="rgba(167,139,250,.12)"/>
+      <text x="430" y="126" text-anchor="middle" font-size="9" fill="var(--purple)">+ several local crops (small patches)</text>
+      <text x="430" y="142" text-anchor="middle" font-size="9" fill="var(--dim)">fed only to student, not teacher</text>
+
+      <!-- arrows down -->
+      <line x1="180" y1="165" x2="180" y2="200" stroke="#34d399" stroke-width="2" marker-end="url(#ar-g)"/>
+      <line x1="680" y1="165" x2="680" y2="200" stroke="#a78bfa" stroke-width="2" marker-end="url(#ar-p)"/>
+
+      <!-- STUDENT -->
+      <rect x="80" y="206" width="200" height="80" rx="12" fill="rgba(52,211,153,.08)" stroke="rgba(52,211,153,.35)" stroke-width="2"/>
+      <text x="180" y="232" text-anchor="middle" font-size="14" font-weight="700" fill="#34d399">Student</text>
+      <text x="180" y="252" text-anchor="middle" font-size="10" fill="var(--dim)">ViT-L (trainable)</text>
+      <text x="180" y="268" text-anchor="middle" font-size="9" fill="var(--dim)">updated by gradient descent</text>
+
+      <!-- TEACHER -->
+      <rect x="580" y="206" width="200" height="80" rx="12" fill="rgba(167,139,250,.08)" stroke="rgba(167,139,250,.3)" stroke-width="2"/>
+      <text x="680" y="232" text-anchor="middle" font-size="14" font-weight="700" fill="#a78bfa">Teacher</text>
+      <text x="680" y="252" text-anchor="middle" font-size="10" fill="var(--dim)">ViT-L (frozen copy)</text>
+      <text x="680" y="268" text-anchor="middle" font-size="9" fill="var(--dim)">updated by EMA of student</text>
+
+      <!-- EMA arrow -->
+      <path d="M 280 246 C 380 190 480 190 580 246" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6" marker-end="url(#ar)"/>
+      <rect x="370" y="188" width="120" height="28" rx="6" fill="var(--s2)" stroke="rgba(251,191,36,.25)"/>
+      <text x="430" y="207" text-anchor="middle" font-size="10" font-weight="600" fill="var(--yellow)">EMA Update</text>
+
+      <!-- arrows down to heads -->
+      <line x1="180" y1="286" x2="180" y2="316" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar-g)"/>
+      <line x1="680" y1="286" x2="680" y2="316" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ar-p)"/>
+
+      <!-- Projection heads -->
+      <rect x="110" y="320" width="140" height="36" rx="8" fill="rgba(52,211,153,.06)" stroke="rgba(52,211,153,.2)"/>
+      <text x="180" y="343" text-anchor="middle" font-size="10" fill="#34d399" font-weight="600">Projection Head</text>
+      <rect x="610" y="320" width="140" height="36" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.2)"/>
+      <text x="680" y="343" text-anchor="middle" font-size="10" fill="#a78bfa" font-weight="600">Projection Head</text>
+
+      <line x1="180" y1="356" x2="180" y2="380" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar-g)"/>
+      <line x1="680" y1="356" x2="680" y2="380" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ar-p)"/>
+
+      <!-- Output distributions -->
+      <rect x="114" y="384" width="132" height="32" rx="6" fill="rgba(52,211,153,.12)" stroke="rgba(52,211,153,.3)"/>
+      <text x="180" y="405" text-anchor="middle" font-size="10" font-weight="600" fill="#34d399">P_student</text>
+      <rect x="614" y="384" width="132" height="32" rx="6" fill="rgba(167,139,250,.12)" stroke="rgba(167,139,250,.3)"/>
+      <text x="680" y="405" text-anchor="middle" font-size="10" font-weight="600" fill="#a78bfa">P_teacher</text>
+
+      <!-- LOSS -->
+      <line x1="246" y1="400" x2="380" y2="400" stroke="var(--yellow)" stroke-width="2"/>
+      <line x1="614" y1="400" x2="480" y2="400" stroke="var(--yellow)" stroke-width="2"/>
+      <rect x="380" y="384" width="100" height="32" rx="8" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.3)" stroke-width="1.5"/>
+      <text x="430" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="var(--yellow)">CE Loss</text>
+      <text x="430" y="432" text-anchor="middle" font-size="9" fill="var(--dim)">Student should predict teacher's output</text>
+    </svg>
+  </div>
+
+  <div class="cb green">
+<span class="cm"># DINOv2 training loop (simplified)</span>
+for images in dataloader:
+    views = augment(images)          <span class="cm"># 2 global + N local crops</span>
+
+    <span class="cm"># Teacher sees only global views (no gradients)</span>
+    with no_grad():
+        t_out = teacher(views[:2])
+        t_out = center(softmax(t_out / t_temp))  <span class="cm"># sharpen + center</span>
+
+    <span class="cm"># Student sees ALL views (global + local)</span>
+    s_out = student(views)
+    s_out = softmax(s_out / s_temp)
+
+    <span class="cm"># Cross-entropy: student should match teacher</span>
+    loss = cross_entropy(s_out, t_out)
+
+    loss.backward()              <span class="cm"># Only student gets gradients</span>
+    optimizer.step()
+
+    <span class="cm"># Teacher = slow-moving average of student</span>
+    teacher.params = ema * teacher.params + (1-ema) * student.params
+  </div>
+
+  <div class="g2" style="margin-top:16px">
+    <div class="info green">
+      <b>Why does this work?</b> The teacher provides a stable target (via EMA), while the student
+      learns from diverse augmented views. Since both see the <em>same content</em> with different
+      augmentations, the student learns augmentation-invariant features — which turn out to be
+      <em>semantically meaningful</em>.
+    </div>
+    <div class="info">
+      <b>Local + Global crops:</b> The student sees small crops that the teacher never sees.
+      To match the teacher's global-view output from a local crop, the student must learn to
+      infer global context from local patches — building rich, compositional features.
+    </div>
+  </div>
+</div>
+
+<!-- DINOv2: EMA Explained -->
+<div class="card">
+  <div style="font-size:1.05rem;font-weight:700;margin-bottom:14px;color:var(--yellow)">EMA (Exponential Moving Average) — The Teacher Update</div>
+  <div class="cb yellow">
+<span class="cm"># After each training step:</span>
+for t_param, s_param in zip(teacher.params, student.params):
+    t_param = momentum * t_param + (1 - momentum) * s_param
+
+<span class="cm"># momentum = 0.996 → 0.9999 (cosine schedule)</span>
+<span class="cm"># Teacher is a "smoothed" version of the student</span>
+<span class="cm"># It changes slowly → provides stable training signal</span>
+<span class="cm"># Without EMA → training collapses (all outputs become identical)</span>
+  </div>
+  <div class="info warn">
+    <b>Collapse prevention:</b> Self-supervised methods can "cheat" by outputting the same vector
+    for every input. DINO prevents this with: (1) EMA teacher (stable target), (2) centering
+    (subtract mean of teacher outputs), (3) sharpening (low temperature in teacher softmax).
+    This is the key challenge in self-supervised learning.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- COMPARISON SECTION -->
+<!-- ================================================================ -->
+<h2 style="color:var(--yellow)">Head-to-Head Comparison</h2>
+<p class="sec-sub">Same ViT backbone, different training signals, different strengths</p>
+
+<div class="card">
+  <div style="overflow-x:auto">
+    <table class="tb">
+      <tr>
+        <th></th>
+        <th style="color:var(--cyan)">CLIP</th>
+        <th style="color:var(--orange)">SigLIP 2</th>
+        <th style="color:var(--green)">DINOv2</th>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Training signal</td>
+        <td>Image-text pairs (400M)</td>
+        <td>Image-text pairs (larger scale)</td>
+        <td>Images only (142M)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Loss function</td>
+        <td>Softmax contrastive (InfoNCE)</td>
+        <td>Binary sigmoid per pair</td>
+        <td>Cross-entropy self-distillation</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Batch size requirement</td>
+        <td class="mono" style="color:var(--red)">32,768 (huge!)</td>
+        <td class="mono" style="color:var(--green)">Any size works</td>
+        <td class="mono">1,024 typical</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Output used</td>
+        <td>[CLS] for matching, patches for VLM</td>
+        <td>[CLS] for matching, patches for VLM</td>
+        <td>[CLS] + patch tokens</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Text alignment</td>
+        <td style="color:var(--green)">Yes — trained with text</td>
+        <td style="color:var(--green)">Yes — trained with text</td>
+        <td style="color:var(--red)">No — purely visual</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Zero-shot classification</td>
+        <td style="color:var(--green)">Excellent</td>
+        <td style="color:var(--green)">State-of-art</td>
+        <td style="color:var(--red)">Not possible (no text encoder)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Dense spatial features</td>
+        <td>Good</td>
+        <td>Better (SigLIP 2 adds dense loss)</td>
+        <td style="color:var(--green)">Excellent</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Segmentation / Depth</td>
+        <td>Moderate</td>
+        <td>Good</td>
+        <td style="color:var(--green)">Best</td>
+      </tr>
+      <tr>
+        <td style="color:var(--yellow);font-weight:700">Used as VLM backbone</td>
+        <td>LLaVA, many VLMs</td>
+        <td>PaliGemma, Qwen-VL</td>
+        <td>Robotics, dense tasks</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- DOWNSTREAM USAGE -->
+<!-- ================================================================ -->
+<h2 style="color:var(--purple)">How VLMs Use These Encoders</h2>
+<p class="sec-sub">The semantic encoder is just the first piece — here's how it connects to the rest</p>
+
+<div class="card">
+  <div class="svg-wrap">
+    <svg width="900" height="260" viewBox="0 0 900 260">
+      <!-- Encoder -->
+      <rect x="20" y="50" width="180" height="80" rx="12" fill="rgba(34,211,238,.08)" stroke="rgba(34,211,238,.3)" stroke-width="1.5"/>
+      <text x="110" y="80" text-anchor="middle" font-size="12" font-weight="700" fill="#22d3ee">Semantic Encoder</text>
+      <text x="110" y="100" text-anchor="middle" font-size="10" fill="var(--dim)">CLIP / SigLIP / DINO</text>
+      <text x="110" y="116" text-anchor="middle" font-size="9" fill="var(--yellow)" font-family="'Fira Code',monospace">→ (576, 1024)</text>
+
+      <line x1="200" y1="90" x2="260" y2="90" stroke="var(--dim)" stroke-width="2" marker-end="url(#ar)"/>
+
+      <!-- Select features -->
+      <rect x="268" y="60" width="140" height="60" rx="10" fill="rgba(251,146,60,.06)" stroke="rgba(251,146,60,.2)"/>
+      <text x="338" y="84" text-anchor="middle" font-size="10" font-weight="600" fill="#fb923c">Feature Selection</text>
+      <text x="338" y="102" text-anchor="middle" font-size="9" fill="var(--dim)">layer -2, drop [CLS]</text>
+
+      <line x1="408" y1="90" x2="458" y2="90" stroke="var(--dim)" stroke-width="2" marker-end="url(#ar)"/>
+
+      <!-- Projector -->
+      <rect x="466" y="56" width="140" height="68" rx="10" fill="rgba(251,146,60,.08)" stroke="rgba(251,146,60,.3)" stroke-width="1.5"/>
+      <text x="536" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#fb923c">MLP Projector</text>
+      <text x="536" y="100" text-anchor="middle" font-size="9" fill="var(--dim)">1024 → 4096</text>
+      <text x="536" y="114" text-anchor="middle" font-size="9" fill="var(--yellow)" font-family="'Fira Code',monospace">→ (576, 4096)</text>
+
+      <line x1="606" y1="90" x2="656" y2="90" stroke="var(--dim)" stroke-width="2" marker-end="url(#ar)"/>
+
+      <!-- LLM -->
+      <rect x="664" y="46" width="210" height="88" rx="12" fill="rgba(167,139,250,.08)" stroke="rgba(167,139,250,.3)" stroke-width="1.5"/>
+      <text x="769" y="76" text-anchor="middle" font-size="13" font-weight="700" fill="#a78bfa">LLM</text>
+      <text x="769" y="96" text-anchor="middle" font-size="10" fill="var(--dim)">visual + text tokens</text>
+      <text x="769" y="112" text-anchor="middle" font-size="10" fill="var(--dim)">→ generate text</text>
+
+      <!-- Which encoder -->
+      <text x="110" y="160" text-anchor="middle" font-size="10" fill="var(--cyan)" font-weight="600">Different encoders give different strengths:</text>
+      <text x="110" y="180" text-anchor="middle" font-size="9" fill="var(--dim)">CLIP/SigLIP → text-aligned</text>
+      <text x="110" y="196" text-anchor="middle" font-size="9" fill="var(--dim)">DINOv2 → spatially detailed</text>
+      <text x="110" y="212" text-anchor="middle" font-size="9" fill="var(--dim)">Some VLMs use BOTH!</text>
+
+      <!-- What projector does -->
+      <text x="536" y="156" text-anchor="middle" font-size="9" fill="var(--orange)">Bridges embedding spaces</text>
+      <text x="536" y="172" text-anchor="middle" font-size="9" fill="var(--dim)">Trained from scratch</text>
+
+      <!-- LLM note -->
+      <text x="769" y="160" text-anchor="middle" font-size="9" fill="var(--purple)">Treats visual tokens</text>
+      <text x="769" y="176" text-anchor="middle" font-size="9" fill="var(--purple)">exactly like text tokens</text>
+    </svg>
+  </div>
+
+  <div class="info pink">
+    <b>DINO for VLMs — the projector problem:</b> Unlike CLIP/SigLIP, DINOv2 features are
+    <em>not</em> text-aligned. The projector must work harder to bridge the gap. Some approaches
+    combine CLIP (for semantic alignment) + DINO (for spatial detail) by concatenating their
+    patch features before projection.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- SHARED EMBEDDING SPACE -->
+<!-- ================================================================ -->
+<h2 style="color:var(--teal)">The Shared Embedding Space (CLIP/SigLIP)</h2>
+<p class="sec-sub">The key innovation: images and text live in the same vector space</p>
+
+<div class="card">
+  <div class="svg-wrap">
+    <svg width="600" height="400" viewBox="0 0 600 400">
+      <!-- space background -->
+      <circle cx="300" cy="200" r="180" fill="none" stroke="var(--bdr)" stroke-width="1" stroke-dasharray="4"/>
+      <circle cx="300" cy="200" r="120" fill="none" stroke="rgba(108,140,255,.08)" stroke-width="80"/>
+      <text x="300" y="390" text-anchor="middle" font-size="10" fill="var(--dim)">768-dimensional shared embedding space (shown as 2D)</text>
+
+      <!-- dog cluster -->
+      <circle cx="180" cy="130" r="6" fill="#22d3ee"/>
+      <circle cx="195" cy="118" r="6" fill="#22d3ee"/>
+      <circle cx="170" cy="145" r="6" fill="#22d3ee"/>
+      <text x="165" y="108" font-size="9" fill="#22d3ee" font-weight="600">dog photos</text>
+      <!-- dog text -->
+      <circle cx="200" cy="140" r="5" fill="#6c8cff"/>
+      <text x="220" y="144" font-size="8" fill="#6c8cff">"a dog"</text>
+      <circle cx="185" cy="155" r="5" fill="#6c8cff"/>
+      <text x="205" y="159" font-size="8" fill="#6c8cff">"puppy"</text>
+
+      <!-- cat cluster -->
+      <circle cx="400" cy="140" r="6" fill="#22d3ee"/>
+      <circle cx="415" cy="125" r="6" fill="#22d3ee"/>
+      <circle cx="390" cy="155" r="6" fill="#22d3ee"/>
+      <text x="430" y="118" font-size="9" fill="#22d3ee" font-weight="600">cat photos</text>
+      <circle cx="410" cy="150" r="5" fill="#6c8cff"/>
+      <text x="428" y="154" font-size="8" fill="#6c8cff">"cat"</text>
+
+      <!-- car cluster -->
+      <circle cx="340" cy="280" r="6" fill="#22d3ee"/>
+      <circle cx="355" cy="270" r="6" fill="#22d3ee"/>
+      <circle cx="325" cy="290" r="6" fill="#22d3ee"/>
+      <text x="370" y="302" font-size="9" fill="#22d3ee" font-weight="600">car photos</text>
+      <circle cx="350" cy="295" r="5" fill="#6c8cff"/>
+      <text x="370" y="290" font-size="8" fill="#6c8cff">"vehicle"</text>
+
+      <!-- landscape cluster -->
+      <circle cx="180" cy="260" r="6" fill="#22d3ee"/>
+      <circle cx="195" cy="275" r="6" fill="#22d3ee"/>
+      <text x="140" y="252" font-size="9" fill="#22d3ee" font-weight="600">landscapes</text>
+      <circle cx="170" cy="280" r="5" fill="#6c8cff"/>
+      <text x="120" y="295" font-size="8" fill="#6c8cff">"sunset"</text>
+
+      <!-- legend -->
+      <circle cx="40" cy="20" r="5" fill="#22d3ee"/>
+      <text x="52" y="24" font-size="10" fill="var(--dim)">Image embeddings</text>
+      <circle cx="40" cy="40" r="5" fill="#6c8cff"/>
+      <text x="52" y="44" font-size="10" fill="var(--dim)">Text embeddings</text>
+
+      <!-- annotation -->
+      <line x1="185" y1="130" x2="200" y2="140" stroke="rgba(52,211,153,.4)" stroke-width="1"/>
+      <text x="235" y="130" font-size="8" fill="var(--green)">close = high similarity</text>
+    </svg>
+  </div>
+  <div class="g2" style="margin-top:8px">
+    <div class="info">
+      <b>Zero-shot classification:</b> To classify an image, embed it and find the closest text
+      embedding from a set of class labels. No task-specific training needed — just describe
+      your classes in text!
+    </div>
+    <div class="info">
+      <b>Why this matters for VLMs:</b> Because CLIP features already "understand" text concepts,
+      a simple MLP projector can bridge them to the LLM. The features are pre-aligned with language,
+      making the projector's job much easier than with a non-text-aligned encoder like DINO.
+    </div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+// Contrastive matrix canvas
+const mc = document.getElementById('matrixCanvas');
+if (mc) {
+  const cx = mc.getContext('2d');
+  const n = 8, cell = 30, pad = 20;
+  cx.fillStyle = '#141824';
+  cx.fillRect(0, 0, 260, 260);
+  for (let r = 0; r < n; r++) {
+    cx.fillStyle = 'rgba(255,255,255,.5)';
+    cx.font = '10px Inter, sans-serif';
+    cx.textAlign = 'right';
+    cx.fillText('I' + r, pad - 4, pad + r * cell + cell / 2 + 3);
+    cx.textAlign = 'center';
+    cx.fillText('T' + r, pad + r * cell + cell / 2, pad - 4);
+    for (let c = 0; c < n; c++) {
+      const match = r === c;
+      const x = pad + c * cell, y = pad + r * cell;
+      cx.fillStyle = match ? 'rgba(52,211,153,.55)' : 'rgba(248,113,113,.08)';
+      cx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+      if (match) {
+        cx.fillStyle = '#fff';
+        cx.font = 'bold 9px Fira Code, monospace';
+        cx.textAlign = 'center';
+        cx.fillText('.9' + (Math.floor(Math.random()*4)+3), x + cell/2, y + cell/2 + 3);
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>

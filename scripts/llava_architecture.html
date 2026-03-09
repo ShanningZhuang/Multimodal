@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLaVA Architecture — Deep Dive into the Vision Pipeline</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e2e8f0;
+    --text-dim: #8892a8;
+    --accent: #6c8cff;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --orange: #fb923c;
+    --pink: #f472b6;
+    --cyan: #22d3ee;
+    --red: #f87171;
+    --yellow: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+  h1 {
+    font-size: 2.4rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle { color: var(--text-dim); font-size: 1.05rem; margin-bottom: 48px; }
+
+  /* ---- Top-level pipeline overview ---- */
+  .pipeline-overview {
+    display: flex; align-items: center; gap: 0;
+    margin-bottom: 56px; flex-wrap: wrap; justify-content: center;
+  }
+  .po-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 28px;
+    text-align: center;
+    min-width: 160px;
+    position: relative;
+    transition: transform .2s, box-shadow .2s;
+    cursor: default;
+  }
+  .po-block:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(108,140,255,.15); }
+  .po-block .label { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+  .po-block .detail { font-size: .82rem; color: var(--text-dim); }
+  .po-arrow {
+    font-size: 1.6rem; color: var(--text-dim); padding: 0 8px;
+    flex-shrink: 0;
+  }
+  .po-block.vision { border-color: var(--cyan); }
+  .po-block.vision .label { color: var(--cyan); }
+  .po-block.proj { border-color: var(--orange); }
+  .po-block.proj .label { color: var(--orange); }
+  .po-block.llm { border-color: var(--accent2); }
+  .po-block.llm .label { color: var(--accent2); }
+
+  /* ---- Section ---- */
+  .section {
+    margin-bottom: 56px;
+  }
+  .section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .section-sub { color: var(--text-dim); font-size: .92rem; margin-bottom: 24px; }
+
+  /* ---- Detailed diagram card ---- */
+  .diagram-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+
+  /* ---- Patch embed visual ---- */
+  .patch-grid-wrapper { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
+  .img-box {
+    width: 264px; height: 264px;
+    border: 2px solid var(--cyan);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(6, 1fr);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .img-box .patch {
+    border: .5px solid rgba(34,211,238,.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .55rem; color: rgba(255,255,255,.35);
+    transition: background .2s;
+  }
+  .img-box .patch:hover { background: rgba(34,211,238,.18); }
+  .patch-info { flex: 1; min-width: 280px; }
+  .patch-info h3 { color: var(--cyan); margin-bottom: 12px; }
+  .math {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'Fira Code', 'Courier New', monospace;
+    font-size: .88rem;
+    margin: 12px 0;
+    border-left: 3px solid var(--cyan);
+    overflow-x: auto;
+  }
+  .math.orange { border-left-color: var(--orange); }
+  .math.purple { border-left-color: var(--accent2); }
+  .math.green { border-left-color: var(--green); }
+  .note {
+    background: rgba(108,140,255,.08);
+    border: 1px solid rgba(108,140,255,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: .88rem;
+    margin: 12px 0;
+    color: var(--text-dim);
+  }
+  .note strong { color: var(--accent); }
+  .note.warn {
+    background: rgba(251,191,36,.07);
+    border-color: rgba(251,191,36,.25);
+  }
+  .note.warn strong { color: var(--yellow); }
+
+  /* ---- Transformer layer breakdown ---- */
+  .layer-stack {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    padding: 16px 0;
+  }
+  .layer-box {
+    width: 100%; max-width: 600px;
+    border-radius: 12px; padding: 18px 24px;
+    position: relative;
+  }
+  .layer-box .lbl { font-weight: 700; font-size: .95rem; margin-bottom: 4px; }
+  .layer-box .desc { font-size: .82rem; color: var(--text-dim); }
+  .layer-box.attn { background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); }
+  .layer-box.attn .lbl { color: var(--cyan); }
+  .layer-box.ln { background: rgba(148,163,184,.06); border: 1px solid rgba(148,163,184,.15); }
+  .layer-box.ln .lbl { color: #94a3b8; }
+  .layer-box.ffn { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); }
+  .layer-box.ffn .lbl { color: var(--green); }
+  .layer-box.res { background: rgba(167,139,250,.06); border: 1px dashed rgba(167,139,250,.3); }
+  .layer-box.res .lbl { color: var(--accent2); }
+  .layer-arrow { color: var(--text-dim); font-size: 1.2rem; padding: 4px 0; }
+
+  /* ---- Token flow visual ---- */
+  .token-flow {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; flex-wrap: wrap;
+  }
+  .tok-group {
+    display: flex; gap: 3px; align-items: center;
+  }
+  .tok {
+    width: 28px; height: 28px;
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .55rem; font-weight: 600;
+  }
+  .tok.cls { background: var(--pink); color: #fff; }
+  .tok.patch { background: rgba(34,211,238,.2); border: 1px solid rgba(34,211,238,.4); color: var(--cyan); }
+  .tok.dots { background: none; border: none; color: var(--text-dim); font-size: .75rem; width: auto; }
+  .tok.text { background: rgba(167,139,250,.2); border: 1px solid rgba(167,139,250,.4); color: var(--accent2); }
+  .tok.proj { background: rgba(251,146,60,.2); border: 1px solid rgba(251,146,60,.4); color: var(--orange); }
+  .flow-arrow { color: var(--text-dim); font-size: 1.3rem; flex-shrink: 0; }
+
+  /* ---- Projector detail ---- */
+  .proj-chain {
+    display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+    justify-content: center; padding: 16px 0;
+  }
+  .proj-node {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 22px;
+    text-align: center;
+    min-width: 110px;
+  }
+  .proj-node .n-label { font-weight: 700; font-size: .9rem; }
+  .proj-node .n-detail { font-size: .78rem; color: var(--text-dim); }
+  .proj-node.active { border-color: var(--orange); }
+  .proj-node.active .n-label { color: var(--orange); }
+  .proj-arrow { padding: 0 6px; color: var(--text-dim); font-size: 1.2rem; }
+
+  /* ---- Dimension tracker ---- */
+  .dim-table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+  }
+  .dim-table th, .dim-table td {
+    padding: 10px 16px; text-align: left; font-size: .88rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dim-table th {
+    color: var(--text-dim); font-weight: 600; font-size: .78rem;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .dim-table td:first-child { color: var(--accent); font-weight: 600; }
+  .dim-table .shape { font-family: 'Fira Code', monospace; color: var(--green); }
+
+  /* ---- SVG diagram ---- */
+  .arch-svg-wrap {
+    width: 100%; overflow-x: auto; padding: 16px 0;
+    display: flex; justify-content: center;
+  }
+  svg text { font-family: 'Inter', sans-serif; }
+
+  /* ---- Tooltip ---- */
+  .has-tip { position: relative; cursor: help; }
+  .has-tip .tip {
+    display: none;
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%);
+    background: #1e2030; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: .78rem; color: var(--text-dim);
+    width: max-content; max-width: 280px;
+    z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    pointer-events: none;
+  }
+  .has-tip:hover .tip { display: block; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 700px) {
+    h1 { font-size: 1.6rem; }
+    .diagram-card { padding: 18px; }
+    .patch-grid-wrapper { gap: 20px; }
+    .img-box { width: 180px; height: 180px; }
+  }
+
+  /* ---- Feature selection diagram ---- */
+  .layers-vis {
+    display: flex; flex-direction: column; gap: 2px; align-items: center;
+    padding: 12px 0;
+  }
+  .lv-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .lv-bar {
+    height: 22px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .65rem; font-weight: 600; min-width: 200px;
+    transition: all .2s;
+  }
+  .lv-bar.normal { background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.15); color: var(--cyan); }
+  .lv-bar.selected { background: rgba(251,146,60,.2); border: 2px solid var(--orange); color: var(--orange); }
+  .lv-bar.last { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.15); color: #94a3b8; }
+  .lv-label { font-size: .72rem; color: var(--text-dim); width: 70px; text-align: right; }
+
+  .connector { width: 2px; height: 20px; background: var(--border); margin: 0 auto; }
+
+  /* ---- Attention detail ---- */
+  .attn-detail {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    margin: 12px 0;
+  }
+  @media (max-width: 700px) { .attn-detail { grid-template-columns: 1fr; } }
+  .attn-card {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+  }
+  .attn-card h4 { font-size: .9rem; margin-bottom: 8px; }
+  .attn-card p { font-size: .82rem; color: var(--text-dim); }
+
+  .highlight { color: var(--yellow); font-weight: 600; }
+  .code { font-family: 'Fira Code', monospace; font-size: .85rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>LLaVA Architecture</h1>
+<p class="subtitle">Large Language and Vision Assistant — deep dive into how images become tokens for the LLM</p>
+
+<!-- ============================================================ -->
+<!-- TOP-LEVEL OVERVIEW -->
+<!-- ============================================================ -->
+<div class="pipeline-overview">
+  <div class="po-block">
+    <div class="label">Input Image</div>
+    <div class="detail">Any resolution<br>e.g. 600×400</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block vision has-tip">
+    <div class="label">CLIP ViT-L/14</div>
+    <div class="detail">Vision Encoder<br>336×336 → 576 tokens</div>
+    <div class="tip">Pre-trained CLIP vision transformer. Frozen during LLaVA training (stage 1) or fine-tuned (stage 2).</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block proj has-tip">
+    <div class="label">MLP Projector</div>
+    <div class="detail">1024-d → 4096-d<br>2-layer MLP</div>
+    <div class="tip">Bridges the vision and language embedding spaces. Trained from scratch.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block llm has-tip">
+    <div class="label">LLM (Vicuna)</div>
+    <div class="detail">Autoregressive<br>text generation</div>
+    <div class="tip">Standard causal language model. Receives interleaved visual + text tokens.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block">
+    <div class="label">Output Text</div>
+    <div class="detail">Answer / Caption<br>/ Description</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1: PREPROCESSING -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Stage 1 — Image Preprocessing</div>
+  <div class="section-sub">CLIPProcessor: resize, center-crop, normalize</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr><th>Step</th><th>Operation</th><th>Shape</th></tr>
+      <tr><td>Raw image</td><td>Any resolution input</td><td class="shape">(H, W, 3) e.g. (400, 600, 3)</td></tr>
+      <tr><td>Resize</td><td>Shortest side → 336, then center crop</td><td class="shape">(336, 336, 3)</td></tr>
+      <tr><td>Normalize</td><td>ImageNet mean/std per channel</td><td class="shape">(3, 336, 336) float32</td></tr>
+      <tr><td>Batch</td><td>Add batch dimension</td><td class="shape">(1, 3, 336, 336)</td></tr>
+    </table>
+    <div class="note">
+      <strong>Why 336×336?</strong> The original CLIP ViT-L/14 uses 224×224. The "-336" variant was fine-tuned
+      at higher resolution for better detail. 336 / 14 = 24, giving a 24×24 patch grid = 576 patches.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: PATCH EMBEDDING -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Stage 2 — Patch Embedding (Image → Token Sequence)</div>
+  <div class="section-sub">A single Conv2d turns the image into a flat sequence of patch vectors</div>
+  <div class="diagram-card">
+    <div class="patch-grid-wrapper">
+      <div>
+        <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:8px;text-align:center">
+          336×336 image → 24×24 grid (showing 6×6 subset)
+        </div>
+        <div class="img-box" id="patchGrid"></div>
+      </div>
+      <div class="patch-info">
+        <h3>Conv2d Patch Embedding</h3>
+        <div class="math">
+Conv2d(
+  in_channels  = 3,        <span style="color:var(--text-dim)">// RGB</span>
+  out_channels = 1024,     <span style="color:var(--text-dim)">// hidden_size</span>
+  kernel_size  = 14,       <span style="color:var(--text-dim)">// patch_size</span>
+  stride       = 14        <span style="color:var(--text-dim)">// non-overlapping</span>
+)
+        </div>
+        <p style="font-size:.88rem;color:var(--text-dim);margin:12px 0">
+          Each <span class="highlight">14×14 pixel region</span> is multiplied by a learned weight matrix
+          and collapsed into a single <span class="highlight">1024-dim vector</span>. No overlap between patches.
+        </p>
+        <div class="math">
+<span style="color:var(--text-dim)">// Pseudocode:</span>
+input:  (1, 3, 336, 336)
+          ↓ Conv2d(kernel=14, stride=14)
+output: (1, 1024, 24, 24)
+          ↓ flatten spatial dims
+        (1, 576, 1024)
+<span style="color:var(--text-dim)">//       ↑    ↑     ↑</span>
+<span style="color:var(--text-dim)">//     batch seq  embed</span>
+        </div>
+        <div class="note">
+          <strong>Key insight:</strong> This Conv2d is equivalent to slicing the image into
+          576 non-overlapping 14×14 patches, flattening each to 588 values (14×14×3),
+          and multiplying by a (588 → 1024) linear layer. The Conv2d formulation is just more efficient on GPU.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: CLS + POSITION EMBEDDING -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Stage 3 — [CLS] Token + Positional Embeddings</div>
+  <div class="section-sub">Add a global summary token and spatial position information</div>
+  <div class="diagram-card">
+
+    <div style="margin-bottom:20px">
+      <div style="font-size:.9rem;font-weight:600;margin-bottom:10px">Token sequence construction:</div>
+      <div class="token-flow">
+        <div class="tok cls">CLS</div>
+        <span style="color:var(--text-dim);font-size:.85rem;padding:0 4px">←prepend</span>
+        <div class="tok-group">
+          <div class="tok patch">P₀</div>
+          <div class="tok patch">P₁</div>
+          <div class="tok patch">P₂</div>
+          <div class="tok dots">···</div>
+          <div class="tok patch">P₅₇₅</div>
+        </div>
+        <span style="font-size:.82rem;color:var(--text-dim);margin-left:8px">= 577 tokens</span>
+      </div>
+    </div>
+
+    <div class="math">
+<span style="color:var(--pink)">[CLS]</span> = learnable parameter of shape (1024,)
+
+sequence = cat([CLS], patch_embeds)    <span style="color:var(--text-dim)">// (1, 577, 1024)</span>
+
+pos_embed = Embedding(577, 1024)       <span style="color:var(--text-dim)">// learnable, one per position</span>
+
+final = sequence + pos_embed           <span style="color:var(--text-dim)">// (1, 577, 1024)</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div class="note">
+        <strong>[CLS] token:</strong> A learnable vector prepended at position 0. After passing through
+        all transformer layers, it aggregates global image information via attention. CLIP uses it
+        for image-text matching. <em>LLaVA drops it</em> — it uses the patch tokens instead.
+      </div>
+      <div class="note">
+        <strong>Position embeddings:</strong> Without these, the transformer has no notion of spatial
+        arrangement — it would see an unordered bag of patches. The position embeddings are
+        <em>learned</em> (not sinusoidal) and encode the 2D grid position of each patch.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: TRANSFORMER ENCODER -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Stage 4 — Vision Transformer Encoder (×24 layers)</div>
+  <div class="section-sub">Each layer: LayerNorm → Multi-Head Self-Attention → Residual → LayerNorm → FFN → Residual</div>
+  <div class="diagram-card">
+
+    <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start">
+      <!-- Layer stack -->
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:.9rem;font-weight:600;margin-bottom:12px;text-align:center">
+          Single Transformer Layer (Pre-Norm)
+        </div>
+        <div class="layer-stack">
+          <div class="layer-box res">
+            <div class="lbl">Input: x</div>
+            <div class="desc">(1, 577, 1024) — saved for residual connection</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ln">
+            <div class="lbl">LayerNorm</div>
+            <div class="desc">Normalize across the 1024-dim feature axis</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box attn">
+            <div class="lbl">Multi-Head Self-Attention</div>
+            <div class="desc">16 heads × 64 dim/head = 1024 | Every token attends to every token</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box res">
+            <div class="lbl">x = x + attn_out</div>
+            <div class="desc">Residual connection #1</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ln">
+            <div class="lbl">LayerNorm</div>
+            <div class="desc">Normalize again before FFN</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ffn">
+            <div class="lbl">Feed-Forward Network (MLP)</div>
+            <div class="desc">Linear(1024→4096) → QuickGELU → Linear(4096→1024)</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box res">
+            <div class="lbl">x = x + ffn_out</div>
+            <div class="desc">Residual connection #2 → output to next layer</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Attention detail -->
+      <div style="flex:1;min-width:280px">
+        <div style="font-size:.9rem;font-weight:600;margin-bottom:12px">
+          Self-Attention Detail
+        </div>
+        <div class="attn-detail" style="grid-template-columns:1fr">
+          <div class="attn-card">
+            <h4 style="color:var(--cyan)">Q, K, V Projections</h4>
+            <div class="math" style="font-size:.8rem;">
+Q = x @ W_q    <span style="color:var(--text-dim)">// (577, 1024) @ (1024, 1024)</span>
+K = x @ W_k    <span style="color:var(--text-dim)">// → (577, 1024)</span>
+V = x @ W_v    <span style="color:var(--text-dim)">// → (577, 1024)</span>
+
+<span style="color:var(--text-dim)">// Reshape to 16 heads:</span>
+Q, K, V → (16, 577, 64)
+
+attn = softmax(Q @ Kᵀ / √64)  <span style="color:var(--text-dim)">// (16, 577, 577)</span>
+out  = attn @ V                <span style="color:var(--text-dim)">// (16, 577, 64)</span>
+     → concat → (577, 1024)
+     → Linear(1024, 1024)      <span style="color:var(--text-dim)">// output projection</span>
+            </div>
+          </div>
+          <div class="attn-card">
+            <h4 style="color:var(--green)">Feed-Forward Network</h4>
+            <div class="math" style="font-size:.8rem;">
+x → Linear(1024, 4096)  <span style="color:var(--text-dim)">// expand 4×</span>
+  → QuickGELU()          <span style="color:var(--text-dim)">// activation</span>
+  → Linear(4096, 1024)   <span style="color:var(--text-dim)">// contract back</span>
+            </div>
+            <p style="font-size:.8rem;color:var(--text-dim);margin-top:8px">
+              The 4× expansion ratio is standard in transformers. The FFN lets each token
+              independently transform its representation.
+            </p>
+          </div>
+          <div class="attn-card">
+            <h4 style="color:var(--accent2)">Why all tokens attend to all?</h4>
+            <p>Unlike the LLM's <em>causal</em> mask, the vision encoder uses
+              <strong>full bidirectional attention</strong>. Every patch can see every other patch.
+              This is critical — the bottom-right patch might need context from the top-left
+              to understand the scene.</p>
+          </div>
+        </div>
+        <div class="note" style="margin-top:16px">
+          <strong>Attention matrix size:</strong> 577 × 577 = 332,929 entries per head × 16 heads.
+          This is why vision token count matters — attention is O(n²).
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: FEATURE SELECTION -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Stage 5 — Feature Selection (Layer -2, Drop [CLS])</div>
+  <div class="section-sub">LLaVA uses the second-to-last layer's output, not the final layer</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:0 0 auto">
+        <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:8px;text-align:center">
+          24 Transformer Layers + Input Embeddings = 25 Hidden States
+        </div>
+        <div class="layers-vis">
+          <div class="lv-row"><div class="lv-label">input</div><div class="lv-bar normal">hidden_states[0]</div></div>
+          <div class="lv-row"><div class="lv-label">layer 1</div><div class="lv-bar normal">hidden_states[1]</div></div>
+          <div class="lv-row"><div class="lv-label">layer 2</div><div class="lv-bar normal">hidden_states[2]</div></div>
+          <div class="lv-row"><div class="lv-label" style="color:var(--text-dim)">⋮</div><div class="lv-bar normal" style="opacity:.4">···</div></div>
+          <div class="lv-row"><div class="lv-label">layer 22</div><div class="lv-bar normal">hidden_states[22]</div></div>
+          <div class="lv-row">
+            <div class="lv-label" style="color:var(--orange);font-weight:700">layer 23</div>
+            <div class="lv-bar selected">hidden_states[23] ← SELECTED (layer -2)</div>
+          </div>
+          <div class="lv-row"><div class="lv-label">layer 24</div><div class="lv-bar last">hidden_states[24] (final, not used)</div></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="note warn">
+          <strong>Why layer -2 instead of the last layer?</strong><br>
+          The final layer of CLIP is heavily optimized for the contrastive image-text matching loss
+          (projecting toward a single global embedding). This makes it less useful for <em>spatial</em>
+          understanding. The second-to-last layer retains richer, more spatially detailed features
+          that haven't been collapsed toward a single global vector yet.
+        </div>
+        <div class="math orange" style="margin-top:16px">
+<span style="color:var(--text-dim)">// Feature extraction:</span>
+features = hidden_states[-2]      <span style="color:var(--text-dim)">// (1, 577, 1024)</span>
+visual_tokens = features[:, 1:]   <span style="color:var(--text-dim)">// (1, 576, 1024)</span>
+<span style="color:var(--text-dim)">//                        ↑ drop [CLS] at index 0</span>
+        </div>
+        <div class="note" style="margin-top:12px">
+          <strong>Why drop [CLS]?</strong> The [CLS] token is trained for global image-level representation
+          (used in CLIP's contrastive loss). For VLMs, we want per-region spatial detail — the 576
+          patch tokens each represent a specific 14×14 region of the image.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: MLP PROJECTOR -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Stage 6 — MLP Projector (Vision → Language Space)</div>
+  <div class="section-sub">Bridge the gap between CLIP's 1024-d vision space and the LLM's 4096-d token space</div>
+  <div class="diagram-card">
+    <div class="proj-chain">
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--cyan)">Visual Tokens</div>
+        <div class="n-detail">(576, 1024)</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">Linear</div>
+        <div class="n-detail">1024 → 4096</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">GELU</div>
+        <div class="n-detail">activation</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">Linear</div>
+        <div class="n-detail">4096 → 4096</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--accent2)">LLM-ready Tokens</div>
+        <div class="n-detail">(576, 4096)</div>
+      </div>
+    </div>
+    <div class="math orange">
+<span style="color:var(--text-dim)">// LLaVA v1.5 uses a 2-layer MLP (LLaVA v1 used a single Linear)</span>
+projector(x) = Linear₂( GELU( Linear₁(x) ) )
+
+<span style="color:var(--text-dim)">// Per token (applied identically to each of the 576 tokens):</span>
+(1024,) → Linear₁ → (4096,) → GELU → (4096,) → Linear₂ → (4096,)
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div class="note">
+        <strong>Why a projector?</strong> CLIP and the LLM were trained separately with different
+        embedding spaces. The projector learns to translate visual features into "pseudo-text" tokens
+        the LLM can understand. It's the only new component trained in LLaVA's stage-1 pre-training.
+      </div>
+      <div class="note warn">
+        <strong>LLaVA v1 vs v1.5:</strong> v1 used a single linear layer (1024→4096). v1.5 upgraded
+        to a 2-layer MLP with GELU, which significantly improved performance. The extra layer gives
+        more capacity to learn the vision→language mapping.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: TOKEN CONCATENATION -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent2)">Stage 7 — Token Concatenation → LLM</div>
+  <div class="section-sub">Visual tokens are interleaved with text tokens and fed to the LLM as a single sequence</div>
+  <div class="diagram-card">
+    <div style="font-size:.9rem;font-weight:600;margin-bottom:14px">
+      Input to the LLM (e.g., Vicuna-13B):
+    </div>
+    <div class="token-flow" style="flex-wrap:wrap;gap:6px">
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">SYS</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">You</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">are</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">a</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">...</div>
+      <div style="color:var(--text-dim);font-size:.75rem;padding:0 4px">|</div>
+      <div class="tok proj" style="width:auto;padding:0 8px;font-size:.65rem">V₀</div>
+      <div class="tok proj" style="width:auto;padding:0 8px;font-size:.65rem">V₁</div>
+      <div class="tok proj" style="width:auto;padding:0 8px;font-size:.65rem">V₂</div>
+      <div class="tok proj" style="width:auto;padding:0 6px;font-size:.65rem">···</div>
+      <div class="tok proj" style="width:auto;padding:0 8px;font-size:.65rem">V₅₇₅</div>
+      <div style="color:var(--text-dim);font-size:.75rem;padding:0 4px">|</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">Describe</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">this</div>
+      <div class="tok text" style="width:auto;padding:0 8px;font-size:.65rem">image</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="tok text" style="width:18px;height:18px;font-size:0"></div>
+        <span style="font-size:.8rem;color:var(--text-dim)">Text tokens (from tokenizer, embed table)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="tok proj" style="width:18px;height:18px;font-size:0"></div>
+        <span style="font-size:.8rem;color:var(--text-dim)">Visual tokens (from vision encoder + projector)</span>
+      </div>
+    </div>
+    <div class="math purple" style="margin-top:16px">
+<span style="color:var(--text-dim)">// The LLM sees a single token sequence:</span>
+[system_tokens] + [visual_tokens (576)] + [user_text_tokens]
+<span style="color:var(--text-dim)">//     ~30              576                  ~10</span>
+<span style="color:var(--text-dim)">//   all are 4096-dim vectors in the LLM's embedding space</span>
+
+<span style="color:var(--text-dim)">// The LLM processes them with standard causal attention</span>
+<span style="color:var(--text-dim)">// and generates text tokens autoregressively</span>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <strong>The LLM doesn't know the difference!</strong> After projection, visual tokens are
+      indistinguishable in format from text tokens — they're just 4096-dim vectors. The LLM's
+      self-attention naturally learns to cross-attend between visual and text tokens. This is
+      the elegance of LLaVA's approach: no architectural changes to the LLM needed.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: TRAINING -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--green)">Training Strategy (Two Stages)</div>
+  <div class="diagram-card">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div class="attn-card" style="border-color:var(--green)">
+        <h4 style="color:var(--green)">Stage 1: Pre-training (Feature Alignment)</h4>
+        <p style="margin-bottom:8px"><strong>Data:</strong> ~558K image-caption pairs (CC3M filtered)</p>
+        <p style="margin-bottom:8px"><strong>What's trained:</strong> Only the MLP projector</p>
+        <p style="margin-bottom:8px"><strong>Frozen:</strong> Vision encoder + LLM</p>
+        <p><strong>Goal:</strong> Teach the projector to map CLIP features into the LLM's vocabulary space.
+          The LLM learns to "read" image tokens as if they were text.</p>
+      </div>
+      <div class="attn-card" style="border-color:var(--accent2)">
+        <h4 style="color:var(--accent2)">Stage 2: Fine-tuning (Instruction Tuning)</h4>
+        <p style="margin-bottom:8px"><strong>Data:</strong> ~665K instruction-following samples (multi-turn)</p>
+        <p style="margin-bottom:8px"><strong>What's trained:</strong> MLP projector + LLM</p>
+        <p style="margin-bottom:8px"><strong>Frozen:</strong> Vision encoder</p>
+        <p><strong>Goal:</strong> Teach the full system to follow visual instructions — answer questions,
+          describe images, reason about visual content.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: FULL DIMENSION TRACKER -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--yellow)">Complete Tensor Shape Tracker</div>
+  <div class="section-sub">Follow the data through every transformation</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr><th>Stage</th><th>Operation</th><th>Output Shape</th><th>Notes</th></tr>
+      <tr>
+        <td>Input</td>
+        <td>Raw image</td>
+        <td class="shape">(1, 3, 336, 336)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">After CLIPProcessor</td>
+      </tr>
+      <tr>
+        <td>Patch embed</td>
+        <td>Conv2d(3→1024, k=14, s=14)</td>
+        <td class="shape">(1, 1024, 24, 24)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">336/14 = 24 grid per axis</td>
+      </tr>
+      <tr>
+        <td>Flatten</td>
+        <td>Reshape + transpose</td>
+        <td class="shape">(1, 576, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">24×24 = 576 patches</td>
+      </tr>
+      <tr>
+        <td>+ [CLS]</td>
+        <td>Prepend CLS token</td>
+        <td class="shape">(1, 577, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">576 + 1 CLS</td>
+      </tr>
+      <tr>
+        <td>+ Position</td>
+        <td>Add position embeddings</td>
+        <td class="shape">(1, 577, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Shape unchanged, values shifted</td>
+      </tr>
+      <tr>
+        <td>Layer Norm</td>
+        <td>Pre-encoder LayerNorm</td>
+        <td class="shape">(1, 577, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Normalize before transformer</td>
+      </tr>
+      <tr>
+        <td>Transformer</td>
+        <td>×24 encoder layers</td>
+        <td class="shape">(1, 577, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Same shape at every layer</td>
+      </tr>
+      <tr>
+        <td style="color:var(--orange)">Select L-2</td>
+        <td>hidden_states[-2]</td>
+        <td class="shape">(1, 577, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Second-to-last layer</td>
+      </tr>
+      <tr>
+        <td style="color:var(--orange)">Drop CLS</td>
+        <td>[:, 1:, :]</td>
+        <td class="shape">(1, 576, 1024)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Remove global CLS token</td>
+      </tr>
+      <tr>
+        <td style="color:var(--orange)">Projector</td>
+        <td>MLP(1024→4096→4096)</td>
+        <td class="shape">(1, 576, 4096)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Now in LLM embedding space</td>
+      </tr>
+      <tr>
+        <td style="color:var(--accent2)">LLM input</td>
+        <td>Concatenate with text tokens</td>
+        <td class="shape">(1, 576+N, 4096)</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">N = number of text tokens</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: PARAMETER COUNTS -->
+<!-- ============================================================ -->
+<div class="section">
+  <div class="section-title" style="color:var(--text-dim)">Parameter Counts</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr><th>Component</th><th>Parameters</th><th>% of Total</th><th>Trained in Stage 1?</th><th>Trained in Stage 2?</th></tr>
+      <tr>
+        <td style="color:var(--cyan)">CLIP ViT-L/14-336</td>
+        <td>~304M</td>
+        <td style="color:var(--text-dim)">~2%</td>
+        <td style="color:var(--red)">Frozen</td>
+        <td style="color:var(--red)">Frozen</td>
+      </tr>
+      <tr>
+        <td style="color:var(--orange)">MLP Projector</td>
+        <td>~20M</td>
+        <td style="color:var(--text-dim)">&lt;0.2%</td>
+        <td style="color:var(--green)">Trained</td>
+        <td style="color:var(--green)">Trained</td>
+      </tr>
+      <tr>
+        <td style="color:var(--accent2)">Vicuna-13B (LLM)</td>
+        <td>~13B</td>
+        <td style="color:var(--text-dim)">~97.6%</td>
+        <td style="color:var(--red)">Frozen</td>
+        <td style="color:var(--green)">Trained</td>
+      </tr>
+    </table>
+    <div class="note" style="margin-top:16px">
+      <strong>Efficiency insight:</strong> In Stage 1, only ~20M parameters (the projector) are trained — less than 0.2%
+      of the total model. This makes LLaVA remarkably cheap to train initially. Stage 2 unfreezes the LLM but
+      keeps the vision encoder frozen, leveraging CLIP's pre-trained visual features.
+    </div>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+const grid = document.getElementById('patchGrid');
+for (let r = 0; r < 6; r++) {
+  for (let c = 0; c < 6; c++) {
+    const idx = r * 24 + c;
+    const d = document.createElement('div');
+    d.className = 'patch';
+    const t = (c / 5);
+    const red = Math.round(255 * (1 - t));
+    const blue = Math.round(255 * t);
+    d.style.background = `rgba(${red}, 40, ${blue}, 0.25)`;
+    d.textContent = `P${idx}`;
+    d.title = `Patch ${idx}: row ${r}, col ${c}\nCovers pixels (${c*14},${r*14}) to (${(c+1)*14},${(r+1)*14})`;
+    grid.appendChild(d);
+  }
+}
+</script>
+</body>
+</html>

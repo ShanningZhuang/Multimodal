@@ -8,4 +8,9 @@ dependencies = [
     "transformers",
     "pillow",
     "numpy",
+    "httpx[socks]>=0.28.1",
+    "accelerate>=1.13.0",
+    "huggingface-hub>=1.6.0",
+    "sentencepiece>=0.2.1",
+    "protobuf>=7.34.0",
 ]

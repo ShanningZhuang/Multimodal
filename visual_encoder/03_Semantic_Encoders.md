@@ -151,6 +151,24 @@ Same encoder features for both! ─┘
 
 This eliminates the need for dual encoders (e.g., Janus's separate CLIP + VAE), simplifying architecture and reducing overhead.
 
+## Resources
+
+**Papers**
+
+- [Learning Transferable Visual Models From Natural Language Supervision](https://arxiv.org/abs/2103.00020) — Radford et al. (OpenAI), ICML 2021. The original CLIP paper.
+- [Sigmoid Loss for Language Image Pre-Training](https://arxiv.org/abs/2303.15343) — Zhai et al. (Google), ICCV 2023. The original SigLIP paper.
+- [SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features](https://arxiv.org/abs/2502.14786) — Google DeepMind, 2025. Adds captioning, self-distillation, and dense prediction losses.
+- [DINOv2: Learning Robust Visual Features without Supervision](https://arxiv.org/abs/2304.07193) — Oquab et al. (Meta AI), 2023. Self-supervised ViT trained on 142M curated images.
+- [Scaling Language-Free Visual Representation Learning](https://arxiv.org/abs/2504.01017) — Fan et al. (Meta FAIR), ICCV 2025. WebSSL — shows visual SSL matches CLIP at scale.
+
+**Blogs**
+
+- [CLIP: Internals, Architecture, Training, and Limits](https://rinabuoy.com/clip) — Deep dive into CLIP architecture and contrastive training.
+- [Inside CLIP: How Multimodal AI Learns to See and Speak the Same Language](https://blog.gopenai.com/inside-clip-how-multimodal-ai-learns-to-see-and-speak-the-same-language-1415f5f92f06) — Visual walkthrough of CLIP's shared embedding space.
+- [DINOv2 Self-Supervised Learning Explained](https://encord.com/blog/dinov2-self-supervised-learning-explained/) — Encord. Clear explanation of the student-teacher framework.
+- [DINOv2: State-of-the-art computer vision models with self-supervised learning](https://ai.meta.com/blog/dino-v2-computer-vision-self-supervised-learning/) — Meta AI's official blog post.
+- [DINOv2 Self-Supervised Vision Transformer](https://learnopencv.com/dinov2-self-supervised-vision-transformer/) — LearnOpenCV. Architecture walkthrough with code.
+
 ## Related
 
 - [ViT](02_ViT.md) — architecture used by all semantic encoders

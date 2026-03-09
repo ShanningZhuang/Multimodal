@@ -130,6 +130,25 @@ ViT Backbone
 
 These models use ViT architecture but differ in **training objective** — which determines what the representations capture.
 
+## Resources
+
+**Paper**
+
+- [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929) — Dosovitskiy et al., ICLR 2021. The original ViT paper.
+
+**Illustrated / Visual Blogs**
+
+- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) — Jay Alammar. Visual walkthrough of the transformer encoder that ViT builds on.
+- [Vision Transformer (ViT) Explained](https://amaarora.github.io/posts/2021-01-18-ViT.html) — Aman Arora. Diagram-heavy walkthrough of the ViT paper with PyTorch code.
+- [Vision Transformers, Explained](https://towardsdatascience.com/vision-transformers-explained-a9d07147e4c8) — Towards Data Science. Accessible explanation with good figures.
+- [The Transformer Family](https://lilianweng.github.io/posts/2020-04-07-the-transformer-family/) — Lilian Weng. Comprehensive survey of transformer variants including vision transformers.
+
+**Hands-On Code Tutorials**
+
+- [Building Vision Transformers from Scratch](https://medium.com/@manindersingh120996/building-vision-transformers-vit-from-scratch-1f46a36ed44b) — From-scratch PyTorch implementation.
+- [ViT: How It Works and How to Build It in PyTorch](https://medium.com/@akdemir_bahadir/vision-transformer-vit-how-it-works-and-how-to-build-it-in-pytorch-7a1cc79fbdbc) — Architecture explanation with code.
+- [Breaking Down Vision Transformers: A Code-Driven Explanation](https://sgurwinderr.github.io/blog/vision-transformer/) — Component-by-component code walkthrough.
+
 ## Related
 
 - [CNN Basics](01_CNN_Basics.md) — predecessor architecture ViT replaces
