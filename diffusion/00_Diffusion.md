@@ -54,6 +54,17 @@ Timeline:
 | Sampling speed | Slow (many steps) | Fast (1 step) | Fast (1 step) | Slow (sequential) |
 | Controllability | High (guidance) | Limited | Limited | High (prompting) |
 
+## Hands-On Scripts
+
+Learn by running code — these scripts trace diffusion model internals step by step. See [scripts/README.md](../scripts/README.md) for setup.
+
+| # | Script | What You Learn | VRAM |
+|---|--------|---------------|------|
+| 5 | [05_dit_architecture.py](../scripts/05_dit_architecture.py) | DiT patchify, adaLN-Zero, unpatchify, class conditioning | ~2GB |
+| 6 | [06_latent_diffusion_pipeline.py](../scripts/06_latent_diffusion_pipeline.py) | Full FLUX.1-schnell pipeline: text → denoise → VAE → image | ~24GB |
+| 7 | [07_flux_dit_blocks.py](../scripts/07_flux_dit_blocks.py) | FLUX.1-dev dual/single-stream blocks, 2D RoPE, attention | ~24GB |
+| 8 | [08_denoising_loop.py](../scripts/08_denoising_loop.py) | Manual denoising, intermediate visualization, noise→image | ~24GB |
+
 ## Related
 
 - [Visual Encoders](../visual_encoder/00_Visual_Encoder.md) — VAE provides latent space for diffusion

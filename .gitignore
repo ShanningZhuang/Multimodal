@@ -20,3 +20,6 @@ uv.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Script outputs
+outputs/

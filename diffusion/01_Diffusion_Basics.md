@@ -167,6 +167,22 @@ Noise ───────────────── Data     (flow matchin
 - Simpler training objective (regress velocity field)
 - More efficient sampling (straighter trajectories = fewer steps)
 
+## Resources
+
+**Papers**
+
+- [Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2006.11239) — Ho et al., NeurIPS 2020. The foundational DDPM paper.
+- [Improved Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2102.09672) — Nichol & Dhariwal, ICML 2021. Cosine schedule, learned variance, v-prediction.
+- [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598) — Ho & Salimans, NeurIPS 2022 Workshop. CFG — the standard conditioning technique.
+- [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747) — Lipman et al., ICLR 2023. Optimal-transport conditional flow matching.
+- [Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow](https://arxiv.org/abs/2209.03003) — Liu et al., ICLR 2023. Rectified flow — straight-path ODE for generation.
+
+**Blogs**
+
+- [What are Diffusion Models?](https://lilianweng.github.io/posts/2021-07-11-diffusion-models/) — Lilian Weng. Comprehensive math walkthrough of DDPM, score-based models, and connections between them.
+- [The Annotated Diffusion Model](https://huggingface.co/blog/annotated-diffusion) — HuggingFace. Step-by-step PyTorch implementation of DDPM with detailed commentary.
+- [Generative Modeling by Estimating Gradients of the Data Distribution](https://yang-song.net/blog/2021/score/) — Yang Song. Score-based perspective unifying SMLD and DDPM.
+
 ## Related
 
 - [Sampling Methods](02_Sampling.md) — DDIM, DPM-Solver for faster generation

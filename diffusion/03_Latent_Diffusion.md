@@ -153,6 +153,20 @@ How conditions (text, images, etc.) are injected into the model:
 
 Larger text encoders → better text understanding → better prompt following.
 
+## Resources
+
+**Papers**
+
+- [High-Resolution Image Synthesis with Latent Diffusion Models](https://arxiv.org/abs/2112.10752) — Rombach et al., CVPR 2022. The LDM / Stable Diffusion paper.
+- [SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis](https://arxiv.org/abs/2307.01952) — Podell et al., ICLR 2024. Larger U-Net, dual text encoders, refiner.
+- [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206) — Esser et al., ICML 2024. SD3 / MMDiT paper — flow matching + multimodal DiT.
+- [Adding Conditional Control to Text-to-Image Diffusion Models](https://arxiv.org/abs/2302.05543) — Zhang et al., ICCV 2023. ControlNet — spatial conditioning via parallel encoder.
+
+**Blogs**
+
+- [The Illustrated Stable Diffusion](https://jalammar.github.io/illustrated-stable-diffusion/) — Jay Alammar. Visual walkthrough of the full Stable Diffusion pipeline.
+- [Stable Diffusion Deep Dive](https://huggingface.co/blog/stable_diffusion) — HuggingFace. How to use and understand SD with the diffusers library.
+
 ## Related
 
 - [VAE](../visual_encoder/04_VAE.md) — the autoencoder that defines the latent space

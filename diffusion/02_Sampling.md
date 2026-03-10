@@ -136,6 +136,21 @@ image = pipe(
 ).images[0]
 ```
 
+## Resources
+
+**Papers**
+
+- [Denoising Diffusion Implicit Models](https://arxiv.org/abs/2010.02502) — Song et al., ICLR 2021. DDIM — deterministic sampling, step skipping, and inversion.
+- [DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling](https://arxiv.org/abs/2206.00927) — Lu et al., NeurIPS 2022. High-order ODE solver for diffusion.
+- [DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models](https://arxiv.org/abs/2211.01095) — Lu et al., 2022. Multistep solver with thresholding for guided sampling.
+- [Consistency Models](https://arxiv.org/abs/2303.01469) — Song et al., ICML 2023. Direct mapping from any noise level to data in one step.
+- [Latent Consistency Models](https://arxiv.org/abs/2310.04378) — Luo et al., 2023. Apply consistency distillation to latent diffusion for 1-4 step generation.
+
+**Blogs**
+
+- [Stable Diffusion Samplers: A Comprehensive Guide](https://stable-diffusion-art.com/samplers/) — Practical comparison of samplers with visual examples and speed benchmarks.
+- [How does Stable Diffusion work?](https://stable-diffusion-art.com/how-stable-diffusion-work/) — Accessible explanation of the full pipeline including sampler choices.
+
 ## Related
 
 - [Diffusion Basics](01_Diffusion_Basics.md) — DDPM foundation and noise schedules
