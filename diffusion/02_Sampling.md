@@ -8,7 +8,32 @@ DDPM requires ~1000 denoising steps, making generation very slow. Modern sampler
 
 ## DDIM (Denoising Diffusion Implicit Models)
 
-DDIM reformulates the reverse process as a **deterministic** (non-Markovian) mapping:
+Recall that the DDPM forward process gives us:
+
+$$x_t = \sqrt{\bar{\alpha}_t}\, x_0 + \sqrt{1 - \bar{\alpha}_t}\, \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)$$
+
+DDIM reformulates the reverse process as a **deterministic** (non-Markovian) mapping. Instead of modeling \(p(x_{t-1} \mid x_t)\) as a Gaussian like DDPM, DDIM defines a family of non-Markovian processes indexed by \(\eta\).
+
+**Step 1 — Predict \(x_0\)** from \(x_t\) by rearranging the forward equation:
+
+$$\hat{x}_0 = \frac{x_t - \sqrt{1 - \bar{\alpha}_t}\, \epsilon_\theta(x_t, t)}{\sqrt{\bar{\alpha}_t}}$$
+
+**Step 2 — DDIM update rule** (generalized form with stochasticity parameter \(\eta\)):
+
+$$x_{t-1} = \sqrt{\bar{\alpha}_{t-1}}\, \hat{x}_0 + \sqrt{1 - \bar{\alpha}_{t-1} - \sigma_t^2}\, \epsilon_\theta(x_t, t) + \sigma_t\, \epsilon$$
+
+where:
+
+$$\sigma_t = \eta \sqrt{\frac{1 - \bar{\alpha}_{t-1}}{1 - \bar{\alpha}_t}} \sqrt{1 - \frac{\bar{\alpha}_t}{\bar{\alpha}_{t-1}}}$$
+
+- When \(\eta = 0\): \(\sigma_t = 0\), the process is **fully deterministic** (pure DDIM)
+- When \(\eta = 1\): recovers the DDPM stochastic process
+
+Substituting \(\hat{x}_0\) back, the deterministic (\(\eta = 0\)) update simplifies to:
+
+$$x_{t-1} = \sqrt{\bar{\alpha}_{t-1}} \left(\frac{x_t - \sqrt{1 - \bar{\alpha}_t}\, \epsilon_\theta(x_t, t)}{\sqrt{\bar{\alpha}_t}}\right) + \sqrt{1 - \bar{\alpha}_{t-1}}\, \epsilon_\theta(x_t, t)$$
+
+In code (deterministic DDIM, \(\eta = 0\)):
 
 ```python
 # DDIM Sampling — can skip timesteps
@@ -31,29 +56,45 @@ for i in range(len(timesteps) - 1):
 ```
 
 Key properties:
-- **Deterministic**: same noise → same image (when η=0)
-- **Skip steps**: use any subset of timesteps
+- **Deterministic**: same noise \(\rightarrow\) same image (when \(\eta = 0\))
+- **Skip steps**: use any subsequence of timesteps \(\{\tau_1, \tau_2, \ldots, \tau_S\} \subset \{1, \ldots, T\}\) with \(S \ll T\)
 - **Invertible**: can encode images back to noise (useful for editing)
 - Typically 20-50 steps for good quality
 
 ## DPM-Solver
 
-Treats the diffusion ODE as a math problem and applies high-order ODE solvers:
+The diffusion process can be described by a continuous-time ODE (the **probability flow ODE**):
+
+$$\frac{dx}{dt} = f(t)\, x + \frac{g^2(t)}{2\sigma_t}\, \epsilon_\theta(x, t)$$
+
+where \(f(t)\) and \(g(t)\) are the drift and diffusion coefficients of the forward SDE, and \(\sigma_t = \sqrt{1 - \bar{\alpha}_t}\).
+
+DPM-Solver introduces a change of variable \(\lambda_t = \log(\sqrt{\bar{\alpha}_t} / \sigma_t)\) (the log signal-to-noise ratio), which simplifies the ODE into an exact solution form:
+
+$$x_s = \frac{\sigma_s}{\sigma_t} x_t - \sigma_s \int_{\lambda_t}^{\lambda_s} e^{-\lambda}\, \hat{x}_0(\lambda)\, d\lambda$$
+
+where \(\hat{x}_0(\lambda)\) is the predicted clean image at log-SNR \(\lambda\). Different orders of Taylor expansion on \(\hat{x}_0(\lambda)\) give different solvers:
 
 | Solver | Order | Steps for Good Quality | Key Idea |
 |--------|-------|----------------------|----------|
-| DDIM | 1st order | 50 | Euler method |
-| DPM-Solver-2 | 2nd order | 20 | Midpoint method |
+| DDIM | 1st order | 50 | Euler method (constant approximation of \(\hat{x}_0\)) |
+| DPM-Solver-2 | 2nd order | 20 | Midpoint method (linear approximation) |
 | DPM-Solver++ | 2nd/3rd | 15-20 | Multistep, better stability |
 
 Higher-order solvers take fewer steps because they better approximate the continuous denoising trajectory.
 
 ## Euler / Euler Ancestral
 
-Simple ODE solvers commonly used in practice:
+Simple ODE solvers commonly used in practice. Given the probability flow ODE \(dx = f(x, t)\, dt\):
 
-- **Euler**: Basic first-order ODE solver, deterministic
-- **Euler Ancestral (Euler a)**: Adds noise at each step (stochastic), more creative/varied outputs
+**Euler** (deterministic, first-order): discretize with step size \(\Delta t = t_{i+1} - t_i\):
+
+$$x_{i+1} = x_i + f(x_i, t_i)\, \Delta t$$
+
+**Euler Ancestral** (stochastic): injects noise at each step for diversity:
+
+$$x_{i+1} = x_i + f(x_i, t_i)\, \Delta t + g(t_i)\, \sqrt{|\Delta t|}\, \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)$$
+
 - Used in many Stable Diffusion UIs as default sampler
 
 ## Classifier-Free Guidance (CFG) — Deep Dive
@@ -70,6 +111,20 @@ At inference:
 
   where s = guidance scale
 ```
+
+In math: the model learns both \(\epsilon_\theta(x_t, t, c)\) and \(\epsilon_\theta(x_t, t, \varnothing)\) by randomly dropping \(c\) with probability \(p_\text{drop}\).
+
+At inference, combine the conditional and unconditional predictions:
+
+$$\tilde{\epsilon}_\theta(x_t, t, c) = \epsilon_\theta(x_t, t, \varnothing) + s \cdot \left[\epsilon_\theta(x_t, t, c) - \epsilon_\theta(x_t, t, \varnothing)\right]$$
+
+where \(s\) is the **guidance scale**. This can be rewritten as:
+
+$$\tilde{\epsilon}_\theta = (1 - s)\, \epsilon_\theta(x_t, t, \varnothing) + s\, \epsilon_\theta(x_t, t, c)$$
+
+Intuitively, CFG amplifies the direction in noise space that points toward the condition \(c\) and away from the unconditional output. In score function terms:
+
+$$\nabla_{x_t} \log p_s(x_t \mid c) = \nabla_{x_t} \log p(x_t) + s \cdot \nabla_{x_t} \log p(c \mid x_t)$$
 
 ### Guidance Scale Effects
 
@@ -95,16 +150,34 @@ CFG requires **two forward passes** per step (conditional + unconditional), doub
 
 ## Consistency Models
 
-Learn to map any noisy x_t directly to x_0 in a single step:
+Learn a **consistency function** \(f_\theta(x_t, t)\) that maps any noisy \(x_t\) on the same ODE trajectory directly to the origin \(x_0\):
 
 ```
 Traditional:  x_T → x_{T-1} → ... → x_1 → x_0  (many steps)
 Consistency:  x_t  ─────────────────────→  x_0    (one step)
 ```
 
+In math:
+
+$$\text{Traditional:} \quad x_T \to x_{T-1} \to \cdots \to x_1 \to x_0 \quad \text{(many steps)}$$
+
+$$\text{Consistency:} \quad f_\theta(x_t, t) = x_0 \quad \text{(one step, for any } t \text{)}$$
+
+The key **self-consistency property**: for any two points on the same PF-ODE trajectory,
+
+$$f_\theta(x_t, t) = f_\theta(x_{t'}, t') \quad \forall\, t, t' \in [\epsilon, T]$$
+
+with the boundary condition \(f_\theta(x_\epsilon, \epsilon) = x_\epsilon\) (identity at \(t = \epsilon\)).
+
+**Training** minimizes the consistency loss:
+
+$$\mathcal{L} = \mathbb{E}\left[\, d\!\left(f_\theta(x_{t_{n+1}}, t_{n+1}),\; f_{\theta^-}(\hat{x}_{t_n}, t_n)\right)\,\right]$$
+
+where \(\hat{x}_{t_n}\) is obtained by one ODE step from \(x_{t_{n+1}}\), \(\theta^-\) is an EMA of \(\theta\), and \(d(\cdot, \cdot)\) is a distance metric (e.g., \(\ell_2\) or LPIPS).
+
 - Can generate in 1-4 steps
 - Quality trade-off vs. multi-step sampling
-- Latent Consistency Models (LCM): apply to latent diffusion
+- Latent Consistency Models (LCM): apply consistency distillation to latent diffusion
 
 ## Scheduler/Sampler Summary
 

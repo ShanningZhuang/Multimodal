@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diffusion Transformers — From DiT to FLUX.1</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e2e8f0;
+    --text-dim: #8892a8;
+    --accent: #6c8cff;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --orange: #fb923c;
+    --pink: #f472b6;
+    --cyan: #22d3ee;
+    --red: #f87171;
+    --yellow: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+  h1 {
+    font-size: 2.4rem;
+    background: linear-gradient(135deg, var(--cyan), var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle { color: var(--text-dim); font-size: 1.05rem; margin-bottom: 48px; }
+
+  /* ---- Navigation tabs ---- */
+  .nav-tabs {
+    display: flex; gap: 4px; margin-bottom: 40px; flex-wrap: wrap;
+    border-bottom: 2px solid var(--border); padding-bottom: 0;
+  }
+  .nav-tab {
+    padding: 12px 24px; cursor: pointer;
+    background: transparent; border: none; color: var(--text-dim);
+    font-size: .92rem; font-weight: 600;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px; transition: all .2s;
+    font-family: inherit;
+  }
+  .nav-tab:hover { color: var(--text); background: rgba(108,140,255,.05); }
+  .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ---- Pipeline overview ---- */
+  .pipeline-overview {
+    display: flex; align-items: center; gap: 0;
+    margin-bottom: 48px; flex-wrap: wrap; justify-content: center;
+  }
+  .po-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 24px;
+    text-align: center;
+    min-width: 140px;
+    transition: transform .2s, box-shadow .2s;
+    cursor: default;
+  }
+  .po-block:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(108,140,255,.15); }
+  .po-block .label { font-weight: 700; font-size: .95rem; margin-bottom: 4px; }
+  .po-block .detail { font-size: .78rem; color: var(--text-dim); }
+  .po-arrow { font-size: 1.5rem; color: var(--text-dim); padding: 0 6px; flex-shrink: 0; }
+
+  /* ---- Section ---- */
+  .section { margin-bottom: 56px; }
+  .section-title { font-size: 1.45rem; font-weight: 700; margin-bottom: 6px; }
+  .section-sub { color: var(--text-dim); font-size: .92rem; margin-bottom: 24px; }
+
+  /* ---- Diagram card ---- */
+  .diagram-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+
+  /* ---- Math block ---- */
+  .math {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'Fira Code', 'Courier New', monospace;
+    font-size: .86rem;
+    margin: 12px 0;
+    border-left: 3px solid var(--cyan);
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.7;
+  }
+  .math.orange { border-left-color: var(--orange); }
+  .math.purple { border-left-color: var(--accent2); }
+  .math.green { border-left-color: var(--green); }
+  .math.pink { border-left-color: var(--pink); }
+  .math.yellow { border-left-color: var(--yellow); }
+
+  /* ---- Note ---- */
+  .note {
+    background: rgba(108,140,255,.08);
+    border: 1px solid rgba(108,140,255,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: .88rem;
+    margin: 12px 0;
+    color: var(--text-dim);
+  }
+  .note strong { color: var(--accent); }
+  .note.warn { background: rgba(251,191,36,.07); border-color: rgba(251,191,36,.25); }
+  .note.warn strong { color: var(--yellow); }
+  .note.green-note { background: rgba(52,211,153,.07); border-color: rgba(52,211,153,.25); }
+  .note.green-note strong { color: var(--green); }
+  .note.pink-note { background: rgba(244,114,182,.07); border-color: rgba(244,114,182,.25); }
+  .note.pink-note strong { color: var(--pink); }
+
+  /* ---- Layer stack ---- */
+  .layer-stack {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    padding: 16px 0;
+  }
+  .layer-box {
+    width: 100%; max-width: 600px;
+    border-radius: 12px; padding: 16px 22px;
+  }
+  .layer-box .lbl { font-weight: 700; font-size: .92rem; margin-bottom: 3px; }
+  .layer-box .desc { font-size: .8rem; color: var(--text-dim); }
+  .layer-box.attn { background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); }
+  .layer-box.attn .lbl { color: var(--cyan); }
+  .layer-box.ln { background: rgba(148,163,184,.06); border: 1px solid rgba(148,163,184,.15); }
+  .layer-box.ln .lbl { color: #94a3b8; }
+  .layer-box.ffn { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); }
+  .layer-box.ffn .lbl { color: var(--green); }
+  .layer-box.res { background: rgba(167,139,250,.06); border: 1px dashed rgba(167,139,250,.3); }
+  .layer-box.res .lbl { color: var(--accent2); }
+  .layer-box.cond { background: rgba(251,146,60,.08); border: 1px solid rgba(251,146,60,.25); }
+  .layer-box.cond .lbl { color: var(--orange); }
+  .layer-box.gate { background: rgba(244,114,182,.07); border: 1px solid rgba(244,114,182,.25); }
+  .layer-box.gate .lbl { color: var(--pink); }
+  .layer-arrow { color: var(--text-dim); font-size: 1.1rem; padding: 3px 0; }
+
+  /* ---- Dimension table ---- */
+  .dim-table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+  }
+  .dim-table th, .dim-table td {
+    padding: 10px 16px; text-align: left; font-size: .86rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dim-table th {
+    color: var(--text-dim); font-weight: 600; font-size: .76rem;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .dim-table td:first-child { color: var(--accent); font-weight: 600; }
+  .dim-table .shape { font-family: 'Fira Code', monospace; color: var(--green); }
+
+  /* ---- Tooltip ---- */
+  .has-tip { position: relative; cursor: help; }
+  .has-tip .tip {
+    display: none;
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%);
+    background: #1e2030; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: .78rem; color: var(--text-dim);
+    width: max-content; max-width: 300px;
+    z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    pointer-events: none;
+  }
+  .has-tip:hover .tip { display: block; }
+
+  /* ---- Color-coded block borders ---- */
+  .po-block.cyan { border-color: var(--cyan); }
+  .po-block.cyan .label { color: var(--cyan); }
+  .po-block.orange { border-color: var(--orange); }
+  .po-block.orange .label { color: var(--orange); }
+  .po-block.purple { border-color: var(--accent2); }
+  .po-block.purple .label { color: var(--accent2); }
+  .po-block.green { border-color: var(--green); }
+  .po-block.green .label { color: var(--green); }
+  .po-block.pink { border-color: var(--pink); }
+  .po-block.pink .label { color: var(--pink); }
+  .po-block.accent { border-color: var(--accent); }
+  .po-block.accent .label { color: var(--accent); }
+
+  /* ---- Projector / chain ---- */
+  .proj-chain {
+    display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+    justify-content: center; padding: 16px 0;
+  }
+  .proj-node {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    text-align: center;
+    min-width: 100px;
+  }
+  .proj-node .n-label { font-weight: 700; font-size: .88rem; }
+  .proj-node .n-detail { font-size: .76rem; color: var(--text-dim); }
+  .proj-node.active { border-color: var(--orange); }
+  .proj-node.active .n-label { color: var(--orange); }
+  .proj-arrow { padding: 0 6px; color: var(--text-dim); font-size: 1.2rem; }
+
+  /* ---- Grid cards ---- */
+  .card-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 12px 0;
+  }
+  @media (max-width: 700px) { .card-grid { grid-template-columns: 1fr; } }
+  .info-card {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 18px 22px;
+    border: 1px solid var(--border);
+  }
+  .info-card h4 { font-size: .92rem; margin-bottom: 8px; }
+  .info-card p { font-size: .82rem; color: var(--text-dim); line-height: 1.6; }
+
+  /* ---- Attention matrix visual ---- */
+  .attn-matrix {
+    display: grid; gap: 2px; margin: 16px auto;
+    width: fit-content;
+  }
+  .attn-cell {
+    width: 100%; aspect-ratio: 1;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .6rem; font-weight: 600;
+    transition: transform .15s;
+    cursor: default;
+  }
+  .attn-cell:hover { transform: scale(1.15); z-index: 2; }
+
+  /* ---- Denoising steps visual ---- */
+  .denoise-steps {
+    display: flex; align-items: center; gap: 0; overflow-x: auto;
+    padding: 16px 0; justify-content: center;
+  }
+  .denoise-step {
+    width: 120px; height: 120px;
+    border-radius: 12px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: .78rem; font-weight: 600;
+    transition: transform .2s;
+  }
+  .denoise-step:hover { transform: scale(1.05); }
+  .denoise-step .step-label { font-size: .68rem; color: var(--text-dim); margin-top: 6px; }
+  .denoise-arrow { font-size: 1.3rem; color: var(--text-dim); padding: 0 4px; flex-shrink: 0; }
+
+  .highlight { color: var(--yellow); font-weight: 600; }
+  .code { font-family: 'Fira Code', monospace; font-size: .85rem; }
+
+  /* ---- Comparison ---- */
+  .compare-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 16px 0;
+  }
+  @media (max-width: 700px) { .compare-row { grid-template-columns: 1fr; } }
+  .compare-col {
+    background: var(--surface2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    border: 1px solid var(--border);
+  }
+  .compare-col h4 { margin-bottom: 12px; font-size: .95rem; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 700px) {
+    h1 { font-size: 1.6rem; }
+    .diagram-card { padding: 18px; }
+    .nav-tab { padding: 10px 14px; font-size: .82rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Diffusion Transformers</h1>
+<p class="subtitle">From DiT-XL/2 to FLUX.1 — architecture, conditioning, denoising, and the full latent diffusion pipeline</p>
+
+<!-- ============================================================ -->
+<!-- NAVIGATION TABS -->
+<!-- ============================================================ -->
+<div class="nav-tabs">
+  <button class="nav-tab active" onclick="showTab('dit')">05 &middot; DiT Architecture</button>
+  <button class="nav-tab" onclick="showTab('pipeline')">06 &middot; Latent Diffusion Pipeline</button>
+  <button class="nav-tab" onclick="showTab('flux')">07 &middot; FLUX DiT Blocks</button>
+  <button class="nav-tab" onclick="showTab('denoise')">08 &middot; Denoising Loop</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 1: DiT ARCHITECTURE (Lab 05) -->
+<!-- ============================================================ -->
+<div id="tab-dit" class="tab-content active">
+
+<!-- Pipeline overview -->
+<div class="pipeline-overview">
+  <div class="po-block cyan has-tip">
+    <div class="label">Noisy Latent z<sub>t</sub></div>
+    <div class="detail">(1, 4, 32, 32)</div>
+    <div class="tip">A 32×32 latent from the VAE encoder with added Gaussian noise at timestep t.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block orange has-tip">
+    <div class="label">Patchify</div>
+    <div class="detail">Conv2d → 256 tokens</div>
+    <div class="tip">Conv2d(4→1152, k=2, s=2) turns the latent into 256 patch tokens.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block purple has-tip">
+    <div class="label">28× DiT Blocks</div>
+    <div class="detail">adaLN-Zero</div>
+    <div class="tip">Each block is conditioned on timestep + class label via adaptive LayerNorm with zero-init gating.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block green has-tip">
+    <div class="label">Unpatchify</div>
+    <div class="detail">tokens → latent</div>
+    <div class="tip">Linear head + reshape converts tokens back to spatial noise prediction.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block pink has-tip">
+    <div class="label">Predicted &epsilon;</div>
+    <div class="detail">(1, 8, 32, 32)</div>
+    <div class="tip">Predicts both noise and learned variance (out_channels = 2 × in_channels = 8).</div>
+  </div>
+</div>
+
+<!-- Patchify -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Patchify — Latent to Token Sequence</div>
+  <div class="section-sub">A Conv2d with kernel = stride = patch_size converts the spatial latent into a flat token sequence</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:300px">
+        <div class="math orange">
+<span style="color:var(--text-dim)">// DiT-XL/2 patchify</span>
+Conv2d(
+  in_channels  = 4,       <span style="color:var(--text-dim)">// VAE latent channels</span>
+  out_channels = 1152,    <span style="color:var(--text-dim)">// hidden_size (16 heads × 72 dim)</span>
+  kernel_size  = 2,       <span style="color:var(--text-dim)">// patch_size</span>
+  stride       = 2        <span style="color:var(--text-dim)">// non-overlapping</span>
+)
+
+<span style="color:var(--text-dim)">// Data flow:</span>
+input:  (1, 4, 32, 32)
+          ↓ Conv2d(k=2, s=2)
+output: (1, 1152, 16, 16)
+          ↓ flatten + transpose
+        (1, 256, 1152)
+<span style="color:var(--text-dim)">//     batch  N   hidden</span>
+<span style="color:var(--text-dim)">//          ↑</span>
+<span style="color:var(--text-dim)">//    N = (32/2)×(32/2) = 256 patches</span></div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="note">
+          <strong>Why patch instead of per-pixel?</strong> A 32×32 latent has 1024 pixels — far too many tokens
+          for self-attention (O(n²) cost). Patch size 2 reduces this to 256 tokens, which is manageable.
+          Each patch covers a 2×2 region of the latent (which maps to ~16×16 pixels in the image via the VAE).
+        </div>
+        <div class="note green-note" style="margin-top:12px">
+          <strong>+ Positional embeddings:</strong> After patchifying, learnable position embeddings
+          (256 × 1152) are added element-wise. These encode the 2D grid position of each patch so the
+          transformer knows spatial arrangement.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Conditioning -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Timestep + Class Conditioning</div>
+  <div class="section-sub">How DiT injects "when" (noise level) and "what" (class label) into every block</div>
+  <div class="diagram-card">
+    <div class="proj-chain">
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--cyan)">Timestep t</div>
+        <div class="n-detail">scalar (e.g. 500)</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">Sinusoidal Embed</div>
+        <div class="n-detail">→ 1152-d</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">MLP</div>
+        <div class="n-detail">t_emb (1152-d)</div>
+      </div>
+      <div class="proj-arrow" style="font-size:1.5rem">+</div>
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--accent2)">Class Label y</div>
+        <div class="n-detail">Embedding table</div>
+      </div>
+      <div class="proj-arrow">=</div>
+      <div class="proj-node" style="border-color:var(--green)">
+        <div class="n-label" style="color:var(--green)">c</div>
+        <div class="n-detail">conditioning (1152-d)</div>
+      </div>
+    </div>
+    <div class="math">
+<span style="color:var(--text-dim)">// Conditioning pipeline (shared across all blocks)</span>
+t_emb     = MLP( sinusoidal_embed(t) )     <span style="color:var(--text-dim)">// (1152,)</span>
+class_emb = EmbeddingTable[y]              <span style="color:var(--text-dim)">// (1152,) from 1001 classes</span>
+c         = t_emb + class_emb             <span style="color:var(--text-dim)">// (1152,)</span>
+
+<span style="color:var(--text-dim)">// In each DiT block, c is projected to 6 modulation parameters:</span>
+(γ₁, β₁, α₁, γ₂, β₂, α₂) = Linear(SiLU(c))  <span style="color:var(--text-dim)">// (1152) → (6 × 1152)</span></div>
+    <div class="note warn">
+      <strong>Why not cross-attention?</strong> DiT-XL/2 is class-conditional — the label is a single scalar,
+      not a sequence. adaLN-Zero is a lightweight way to inject scalar conditioning. For text-conditioned
+      models (like FLUX), cross-attention or joint attention is needed because the text is a sequence.
+    </div>
+  </div>
+</div>
+
+<!-- adaLN-Zero block -->
+<div class="section">
+  <div class="section-title" style="color:var(--pink)">DiT Block — adaLN-Zero Internals</div>
+  <div class="section-sub">Each of the 28 transformer blocks uses adaptive LayerNorm with zero-initialized gating</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:320px">
+        <div class="layer-stack">
+          <div class="layer-box res">
+            <div class="lbl">Input: x</div>
+            <div class="desc">(256, 1152) — saved for residual</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box cond">
+            <div class="lbl">adaLN: γ₁ ⊙ LayerNorm(x) + β₁</div>
+            <div class="desc">Conditioning c modulates the normalized activations</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box attn">
+            <div class="lbl">Multi-Head Self-Attention</div>
+            <div class="desc">16 heads × 72 dim/head = 1152 | 256×256 attention matrix</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box gate">
+            <div class="lbl">Gate: α₁ ⊙ attn_out</div>
+            <div class="desc">α₁ initialized to zero → block starts as identity</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box res">
+            <div class="lbl">x = x + gated_attn</div>
+            <div class="desc">Residual connection #1</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box cond">
+            <div class="lbl">adaLN: γ₂ ⊙ LayerNorm(x) + β₂</div>
+            <div class="desc">Second adaptive normalization for FFN</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ffn">
+            <div class="lbl">Feed-Forward Network</div>
+            <div class="desc">Linear(1152 → 4608) → GELU → Linear(4608 → 1152)</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box gate">
+            <div class="lbl">Gate: α₂ ⊙ ffn_out</div>
+            <div class="desc">Second zero-init gate</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box res">
+            <div class="lbl">x = x + gated_ffn</div>
+            <div class="desc">Residual connection #2 → output to next block</div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="info-card" style="border-color:var(--pink);margin-bottom:16px">
+          <h4 style="color:var(--pink)">What is adaLN-Zero?</h4>
+          <p><strong>Adaptive LayerNorm</strong> replaces the fixed γ, β parameters of standard LayerNorm with values
+          predicted from the conditioning vector c. This lets the conditioning modulate <em>how</em> the
+          normalized activations are scaled and shifted — different timesteps/classes produce
+          different normalization parameters.</p>
+          <p style="margin-top:10px">The <strong>"Zero"</strong> part: the gating parameters α₁, α₂ are initialized to zero.
+          At training start, each block's contribution is zeroed out, making the entire network
+          an identity function. This dramatically improves training stability for deep networks
+          (DiT-XL has 28 blocks).</p>
+        </div>
+        <div class="math pink">
+<span style="color:var(--text-dim)">// Full adaLN-Zero equation per block:</span>
+h = x + α₁ ⊙ Attn( γ₁ ⊙ LN(x) + β₁ )
+out = h + α₂ ⊙ FFN( γ₂ ⊙ LN(h) + β₂ )
+
+<span style="color:var(--text-dim)">// At init: α₁ = α₂ = 0</span>
+<span style="color:var(--text-dim)">// → h = x + 0 = x, out = x + 0 = x</span>
+<span style="color:var(--text-dim)">// → entire block is identity!</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Unpatchify -->
+<div class="section">
+  <div class="section-title" style="color:var(--green)">Unpatchify — Tokens Back to Spatial Latent</div>
+  <div class="section-sub">Two linear heads reshape the token sequence back into a noise prediction</div>
+  <div class="diagram-card">
+    <div class="proj-chain">
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--accent2)">Token sequence</div>
+        <div class="n-detail">(256, 1152)</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">LayerNorm</div>
+        <div class="n-detail">final norm</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">Linear head</div>
+        <div class="n-detail">1152 → p²×C_out = 32</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node" style="border-color:var(--green)">
+        <div class="n-label" style="color:var(--green)">Reshape</div>
+        <div class="n-detail">(16,16,2,2,8) → (32,32,8)</div>
+      </div>
+    </div>
+    <div class="math green">
+<span style="color:var(--text-dim)">// Unpatchify: inverse of the patchify operation</span>
+tokens: (256, 1152)
+  ↓ Linear(1152 → p² × out_channels) = Linear(1152 → 2² × 8 = 32)
+  ↓ (256, 32)
+  ↓ Reshape: (16, 16, 2, 2, 8)
+  ↓ Rearrange to: (32, 32, 8)
+  = (H, W, out_channels)
+
+<span style="color:var(--text-dim)">// out_channels = 8 = 2 × in_channels = 2 × 4</span>
+<span style="color:var(--text-dim)">// → predicts both noise ε AND variance σ² (learned variance loss)</span></div>
+  </div>
+</div>
+
+<!-- Summary table -->
+<div class="section">
+  <div class="section-title" style="color:var(--yellow)">DiT-XL/2-256 Complete Shape Tracker</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr><th>Stage</th><th>Operation</th><th>Output Shape</th><th>Notes</th></tr>
+      <tr><td>Input</td><td>Noisy latent z_t</td><td class="shape">(1, 4, 32, 32)</td><td style="font-size:.82rem;color:var(--text-dim)">From VAE encoder + noise</td></tr>
+      <tr><td>Patchify</td><td>Conv2d(4→1152, k=2, s=2)</td><td class="shape">(1, 1152, 16, 16)</td><td style="font-size:.82rem;color:var(--text-dim)">32/2 = 16 grid per axis</td></tr>
+      <tr><td>Flatten</td><td>Reshape + transpose</td><td class="shape">(1, 256, 1152)</td><td style="font-size:.82rem;color:var(--text-dim)">16×16 = 256 patches</td></tr>
+      <tr><td>+ Position</td><td>Add learnable position embeds</td><td class="shape">(1, 256, 1152)</td><td style="font-size:.82rem;color:var(--text-dim)">Encodes spatial grid location</td></tr>
+      <tr><td style="color:var(--orange)">Conditioning</td><td>t_emb + class_emb → c</td><td class="shape">(1, 1152)</td><td style="font-size:.82rem;color:var(--text-dim)">Shared across all blocks</td></tr>
+      <tr><td style="color:var(--accent2)">28× DiT blocks</td><td>adaLN-Zero + Attn + FFN</td><td class="shape">(1, 256, 1152)</td><td style="font-size:.82rem;color:var(--text-dim)">Shape preserved at every layer</td></tr>
+      <tr><td style="color:var(--green)">Unpatchify</td><td>LN + Linear + reshape</td><td class="shape">(1, 8, 32, 32)</td><td style="font-size:.82rem;color:var(--text-dim)">Back to spatial latent</td></tr>
+    </table>
+  </div>
+</div>
+
+</div><!-- /tab-dit -->
+
+
+<!-- ============================================================ -->
+<!-- TAB 2: LATENT DIFFUSION PIPELINE (Lab 06) -->
+<!-- ============================================================ -->
+<div id="tab-pipeline" class="tab-content">
+
+<!-- Pipeline overview -->
+<div class="pipeline-overview">
+  <div class="po-block accent has-tip">
+    <div class="label">Text Prompt</div>
+    <div class="detail">"A golden retriever<br>in a field of sunflowers"</div>
+    <div class="tip">Natural language description of the desired image.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block cyan has-tip">
+    <div class="label">Text Encoders</div>
+    <div class="detail">CLIP-L + T5-XXL</div>
+    <div class="tip">CLIP-L produces a pooled embedding for conditioning. T5-XXL produces a sequence of token embeddings for attention.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block orange has-tip">
+    <div class="label">DiT Denoiser</div>
+    <div class="detail">4 Euler steps</div>
+    <div class="tip">FLUX.1-schnell is distilled for 4-step generation using flow matching.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block purple has-tip">
+    <div class="label">VAE Decode</div>
+    <div class="detail">latent → pixels</div>
+    <div class="tip">The VAE decoder upsamples the denoised latent to a full-resolution RGB image.</div>
+  </div>
+  <div class="po-arrow">→</div>
+  <div class="po-block green has-tip">
+    <div class="label">Output Image</div>
+    <div class="detail">1024 × 1024 RGB</div>
+    <div class="tip">The final generated image.</div>
+  </div>
+</div>
+
+<!-- Text Encoding -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Dual Text Encoding — CLIP-L + T5-XXL</div>
+  <div class="section-sub">Two text encoders serve different purposes: global conditioning and token-level attention</div>
+  <div class="diagram-card">
+    <div class="compare-row">
+      <div class="compare-col" style="border-color:var(--cyan)">
+        <h4 style="color:var(--cyan)">CLIP-L (OpenAI)</h4>
+        <div class="math" style="font-size:.82rem">
+Prompt → Tokenizer (77 max tokens)
+       → CLIP text encoder
+       → <span style="color:var(--pink)">pooler_output</span>: (768,)
+       <span style="color:var(--text-dim)">// single vector summarizing entire prompt</span></div>
+        <p style="font-size:.84rem;color:var(--text-dim);margin-top:12px">
+          <strong style="color:var(--cyan)">Role:</strong> Provides a global text summary
+          that gets added to the timestep embedding. Tells the model "what kind of image" at every block
+          through the adaLN conditioning vector.
+        </p>
+      </div>
+      <div class="compare-col" style="border-color:var(--accent2)">
+        <h4 style="color:var(--accent2)">T5-XXL (Google)</h4>
+        <div class="math purple" style="font-size:.82rem">
+Prompt → Tokenizer (512 max tokens)
+       → T5 encoder
+       → <span style="color:var(--pink)">sequence embeddings</span>: (512, 4096)
+       <span style="color:var(--text-dim)">// one vector per token</span></div>
+        <p style="font-size:.84rem;color:var(--text-dim);margin-top:12px">
+          <strong style="color:var(--accent2)">Role:</strong> Provides a rich sequence of token embeddings
+          that enter the transformer as "text tokens" in joint or cross attention. Lets the DiT
+          attend to individual words — "golden retriever," "sunflowers," "oil painting."
+        </p>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <strong>Why two encoders?</strong> CLIP is trained on image-text pairs (knows visual semantics),
+      while T5-XXL is a massive language model (understands nuanced text). Together they provide
+      both visual alignment and deep language understanding.
+    </div>
+  </div>
+</div>
+
+<!-- Noise Initialization -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Noise Initialization</div>
+  <div class="section-sub">Generation starts from pure Gaussian noise in the latent space</div>
+  <div class="diagram-card">
+    <div class="math orange">
+<span style="color:var(--text-dim)">// FLUX.1 uses a 16-channel latent space (larger than Stable Diffusion's 4)</span>
+target_size  = 1024 × 1024          <span style="color:var(--text-dim)">// desired image resolution</span>
+vae_scale    = 8                    <span style="color:var(--text-dim)">// VAE downsampling factor</span>
+latent_size  = 128 × 128            <span style="color:var(--text-dim)">// 1024 / 8</span>
+latent_ch    = 16                   <span style="color:var(--text-dim)">// FLUX latent channels</span>
+
+z₁ = randn(1, 16, 128, 128)        <span style="color:var(--text-dim)">// pure noise at t=1</span>
+<span style="color:var(--text-dim)">// mean ≈ 0, std ≈ 1 (standard Gaussian)</span></div>
+    <div class="card-grid" style="margin-top:16px">
+      <div class="note">
+        <strong>Why latent space?</strong> Working in pixel space would require denoising a 1024×1024×3 = 3.1M-dimensional
+        signal. The VAE compresses this to 128×128×16 = 262K dimensions — a 12× reduction.
+        Denoising is much faster and the latent captures semantic content, not pixel-level noise.
+      </div>
+      <div class="note green-note">
+        <strong>16 channels vs 4:</strong> FLUX uses a larger latent (16ch) compared to
+        Stable Diffusion's 4ch. More channels means more information per spatial position,
+        which helps capture finer details. The trade-off is more FLOPs per denoising step.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Denoising Steps -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent2)">Step-by-Step Denoising (4 Euler Steps)</div>
+  <div class="section-sub">FLUX.1-schnell generates in just 4 steps thanks to distillation and flow matching</div>
+  <div class="diagram-card">
+    <div class="denoise-steps">
+      <div class="denoise-step" style="background:rgba(248,113,113,.15);border:2px solid var(--red)">
+        <span style="color:var(--red);font-size:1.2rem">z₁</span>
+        <span class="step-label">Pure noise (t=1)</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:rgba(251,191,36,.1);border:2px solid var(--yellow)">
+        <span style="color:var(--yellow)">DiT(z, t)</span>
+        <span class="step-label">Step 1: predict v</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:rgba(251,146,60,.1);border:2px solid var(--orange)">
+        <span style="color:var(--orange)">DiT(z, t)</span>
+        <span class="step-label">Step 2</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:rgba(167,139,250,.1);border:2px solid var(--accent2)">
+        <span style="color:var(--accent2)">DiT(z, t)</span>
+        <span class="step-label">Step 3</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:rgba(52,211,153,.15);border:2px solid var(--green)">
+        <span style="color:var(--green);font-size:1.2rem">z₀</span>
+        <span class="step-label">Clean latent (t=0)</span>
+      </div>
+    </div>
+    <div class="math purple" style="margin-top:16px">
+<span style="color:var(--text-dim)">// Flow matching Euler solver</span>
+<span style="color:var(--text-dim)">// At each step, the DiT predicts a velocity field v</span>
+
+for t in [1.0, 0.75, 0.50, 0.25]:       <span style="color:var(--text-dim)">// 4 steps from noise to clean</span>
+    v = DiT(z_t, t, text_embeddings)     <span style="color:var(--text-dim)">// velocity prediction</span>
+    dt = -0.25                            <span style="color:var(--text-dim)">// step size (toward t=0)</span>
+    z_{t+dt} = z_t + v × dt              <span style="color:var(--text-dim)">// Euler update</span></div>
+    <div class="note" style="margin-top:16px">
+      <strong>Why only 4 steps?</strong> FLUX.1-schnell is <em>distilled</em> from FLUX.1-dev (which uses 20-50 steps).
+      Distillation trains the student to approximate the teacher's multi-step trajectory in fewer steps.
+      Also, flow matching creates straighter ODE trajectories than DDPM, requiring fewer Euler steps.
+      No classifier-free guidance (CFG) is needed — it's been distilled into the model weights.
+    </div>
+  </div>
+</div>
+
+<!-- VAE Decode -->
+<div class="section">
+  <div class="section-title" style="color:var(--green)">VAE Decode — Latent to Pixels</div>
+  <div class="section-sub">The VAE decoder upsamples the denoised latent representation into an RGB image</div>
+  <div class="diagram-card">
+    <div class="proj-chain">
+      <div class="proj-node">
+        <div class="n-label" style="color:var(--accent2)">Denoised Latent</div>
+        <div class="n-detail">(1, 16, 128, 128)</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node active">
+        <div class="n-label">VAE Decoder</div>
+        <div class="n-detail">ConvNet, 8× upsample</div>
+      </div>
+      <div class="proj-arrow">→</div>
+      <div class="proj-node" style="border-color:var(--green)">
+        <div class="n-label" style="color:var(--green)">RGB Image</div>
+        <div class="n-detail">(1, 3, 1024, 1024)</div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <strong>One-shot decode:</strong> The VAE decoder is a convolutional network that runs once
+      at the end. It was trained to reconstruct images from latent representations.
+      All the "creativity" happens during denoising — the VAE just translates the result to pixels.
+    </div>
+  </div>
+</div>
+
+<!-- Full pipeline table -->
+<div class="section">
+  <div class="section-title" style="color:var(--yellow)">Complete Pipeline Shape Tracker</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr><th>Stage</th><th>Operation</th><th>Output Shape</th><th>Notes</th></tr>
+      <tr><td style="color:var(--cyan)">CLIP-L encode</td><td>Text → pooled embedding</td><td class="shape">(1, 768)</td><td style="font-size:.82rem;color:var(--text-dim)">Global text features → timestep conditioning</td></tr>
+      <tr><td style="color:var(--accent2)">T5-XXL encode</td><td>Text → sequence embeddings</td><td class="shape">(1, 512, 4096)</td><td style="font-size:.82rem;color:var(--text-dim)">Token-level features → attention</td></tr>
+      <tr><td>Noise init</td><td>randn()</td><td class="shape">(1, 16, 128, 128)</td><td style="font-size:.82rem;color:var(--text-dim)">Pure Gaussian noise at t=1</td></tr>
+      <tr><td style="color:var(--orange)">4× Denoise</td><td>DiT forward + Euler step</td><td class="shape">(1, 16, 128, 128)</td><td style="font-size:.82rem;color:var(--text-dim)">Shape preserved, content refined</td></tr>
+      <tr><td style="color:var(--green)">VAE decode</td><td>Latent → RGB pixels</td><td class="shape">(1, 3, 1024, 1024)</td><td style="font-size:.82rem;color:var(--text-dim)">8× spatial upsampling</td></tr>
+    </table>
+  </div>
+</div>
+
+</div><!-- /tab-pipeline -->
+
+
+<!-- ============================================================ -->
+<!-- TAB 3: FLUX DiT BLOCKS (Lab 07) -->
+<!-- ============================================================ -->
+<div id="tab-flux" class="tab-content">
+
+<!-- Architecture overview -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent)">FLUX.1-dev Hybrid Architecture (12B params)</div>
+  <div class="section-sub">19 dual-stream blocks (MMDiT-style) followed by 38 single-stream blocks</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center">
+      <div style="flex:1;min-width:360px">
+        <div class="layer-stack">
+          <div class="layer-box cond" style="max-width:520px">
+            <div class="lbl">Input Embedding</div>
+            <div class="desc">Image patches (4096 tokens, 3072-d) + Text tokens (512 tokens, 3072-d)</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box attn" style="max-width:520px;border-width:2px">
+            <div class="lbl">19× Dual-Stream Blocks (MMDiT)</div>
+            <div class="desc">Separate QKV for image and text → Joint attention → Separate FFNs</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ln" style="max-width:520px">
+            <div class="lbl">Concatenate Streams</div>
+            <div class="desc">Image + Text tokens → unified sequence (4608 total tokens)</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box ffn" style="max-width:520px;border-width:2px">
+            <div class="lbl">38× Single-Stream Blocks</div>
+            <div class="desc">Shared QKV + FFN over the entire unified sequence</div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer-box gate" style="max-width:520px">
+            <div class="lbl">Output Projection</div>
+            <div class="desc">Extract image tokens → unpatchify → predicted velocity</div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:0 0 280px">
+        <div class="info-card" style="border-color:var(--accent);margin-bottom:16px">
+          <h4 style="color:var(--accent)">Architecture Config</h4>
+          <table class="dim-table" style="margin:0">
+            <tr><td style="font-size:.8rem">Hidden dim</td><td style="font-size:.8rem" class="shape">3072</td></tr>
+            <tr><td style="font-size:.8rem">Attention heads</td><td style="font-size:.8rem" class="shape">24</td></tr>
+            <tr><td style="font-size:.8rem">Head dim</td><td style="font-size:.8rem" class="shape">128</td></tr>
+            <tr><td style="font-size:.8rem">Dual-stream blocks</td><td style="font-size:.8rem" class="shape">19</td></tr>
+            <tr><td style="font-size:.8rem">Single-stream blocks</td><td style="font-size:.8rem" class="shape">38</td></tr>
+            <tr><td style="font-size:.8rem">In channels</td><td style="font-size:.8rem" class="shape">64</td></tr>
+            <tr><td style="font-size:.8rem;border:none">Total params</td><td style="font-size:.8rem;border:none" class="shape">~12B</td></tr>
+          </table>
+        </div>
+        <div class="note">
+          <strong>Dual → Single transition:</strong> After 19 dual-stream blocks, image and text
+          representations are well-aligned. A unified stream is more parameter-efficient for the
+          remaining 38 layers of refinement.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dual-stream block -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Dual-Stream Block (MMDiT-style)</div>
+  <div class="section-sub">Image and text maintain separate representations but share a single joint attention operation</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:340px">
+        <div class="math">
+<span style="color:var(--text-dim)">// Dual-stream block forward pass</span>
+
+<span style="color:var(--cyan)">// Image stream (3072-d per token)</span>
+Qx = img_norm(x) @ W_Qx    <span style="color:var(--text-dim)">// separate QKV weights for image</span>
+Kx = img_norm(x) @ W_Kx
+Vx = img_norm(x) @ W_Vx
+
+<span style="color:var(--accent2)">// Text stream (3072-d per token)</span>
+Qy = txt_norm(y) @ W_Qy    <span style="color:var(--text-dim)">// separate QKV weights for text</span>
+Ky = txt_norm(y) @ W_Ky
+Vy = txt_norm(y) @ W_Vy
+
+<span style="color:var(--green)">// Joint attention — concatenate before attention</span>
+Q = [Qx ; Qy]              <span style="color:var(--text-dim)">// (4096+512, 3072)</span>
+K = [Kx ; Ky]
+V = [Vx ; Vy]
+Attn = softmax(QKᵀ / √128) @ V
+
+<span style="color:var(--text-dim)">// Split back into streams</span>
+attn_img, attn_txt = split(Attn, [4096, 512])
+
+<span style="color:var(--text-dim)">// Separate FFNs per modality</span>
+x = x + attn_img + img_FFN(img_norm2(x + attn_img))
+y = y + attn_txt + txt_FFN(txt_norm2(y + attn_txt))</div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="info-card" style="border-color:var(--cyan);margin-bottom:16px">
+          <h4 style="color:var(--cyan)">Why "Joint" Attention?</h4>
+          <p>Instead of running separate self-attention for image and cross-attention for text,
+          all tokens (image + text) are concatenated into one sequence before computing attention.
+          This means every token attends to every other token in a single operation —
+          more expressive than separate self-attention + cross-attention.</p>
+        </div>
+        <div class="info-card" style="border-color:var(--accent2)">
+          <h4 style="color:var(--accent2)">Why Separate FFNs?</h4>
+          <p>Although attention is joint, the FFN is separate per modality. Image patches and text tokens
+          have very different statistical properties — separate FFNs let each stream learn modality-specific
+          transformations while still sharing information through joint attention.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Attention matrix -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Joint Attention Matrix Structure</div>
+  <div class="section-sub">For a 1024×1024 image: 4096 image tokens + 512 text tokens = 4608 total tokens</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
+      <div id="attnMatrixWrap" style="flex:0 0 auto">
+        <div style="text-align:center;font-size:.78rem;color:var(--text-dim);margin-bottom:8px">
+          Attention matrix (4608 × 4608) — hover for details
+        </div>
+        <div style="display:grid;grid-template-columns:auto auto;gap:3px;width:fit-content;margin:0 auto">
+          <div class="attn-cell" style="width:200px;height:200px;background:rgba(34,211,238,.15);border:2px solid rgba(34,211,238,.3);border-radius:8px">
+            <div style="text-align:center">
+              <div style="color:var(--cyan);font-size:.85rem;font-weight:700">img → img</div>
+              <div style="color:var(--text-dim);font-size:.7rem">self-attention<br>4096 × 4096</div>
+            </div>
+          </div>
+          <div class="attn-cell" style="width:52px;height:200px;background:rgba(251,146,60,.12);border:2px solid rgba(251,146,60,.3);border-radius:8px">
+            <div style="text-align:center">
+              <div style="color:var(--orange);font-size:.72rem;font-weight:700">img→txt</div>
+              <div style="color:var(--text-dim);font-size:.6rem">4096×512</div>
+            </div>
+          </div>
+          <div class="attn-cell" style="width:200px;height:52px;background:rgba(251,146,60,.12);border:2px solid rgba(251,146,60,.3);border-radius:8px">
+            <div style="text-align:center">
+              <div style="color:var(--orange);font-size:.72rem;font-weight:700">txt → img</div>
+              <div style="color:var(--text-dim);font-size:.6rem">512 × 4096</div>
+            </div>
+          </div>
+          <div class="attn-cell" style="width:52px;height:52px;background:rgba(167,139,250,.15);border:2px solid rgba(167,139,250,.3);border-radius:8px">
+            <div style="text-align:center">
+              <div style="color:var(--accent2);font-size:.6rem;font-weight:700">txt→txt</div>
+              <div style="color:var(--text-dim);font-size:.5rem">512²</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="math orange">
+<span style="color:var(--text-dim)">// Token counts for 1024×1024 generation</span>
+Image:  1024px ÷ 8 (VAE) = 128 latent
+        128 ÷ 2 (patch) = 64 per axis
+        64 × 64 = <span style="color:var(--cyan)">4096 image tokens</span>
+
+Text:   T5 max length = <span style="color:var(--accent2)">512 text tokens</span>
+
+Total:  4096 + 512 = <span style="color:var(--green)">4608 tokens</span>
+
+Attention matrix: 4608² = <span style="color:var(--yellow)">21,233,664</span> entries
+                  per head, per batch</div>
+        <div class="note" style="margin-top:12px">
+          <strong>All four quadrants computed in one operation:</strong> This is fundamentally different
+          from architectures that use separate self-attention + cross-attention layers. Joint attention
+          lets img←→txt, img←→img, and txt←→txt interactions happen simultaneously.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Single-stream block -->
+<div class="section">
+  <div class="section-title" style="color:var(--green)">Single-Stream Block</div>
+  <div class="section-sub">After dual-stream processing, all tokens are concatenated and processed with shared weights</div>
+  <div class="diagram-card">
+    <div class="compare-row">
+      <div class="compare-col" style="border-color:var(--cyan)">
+        <h4 style="color:var(--cyan)">Dual-Stream (×19)</h4>
+        <ul style="font-size:.84rem;color:var(--text-dim);list-style:none;line-height:2">
+          <li>&#x2022; Separate QKV for img and txt</li>
+          <li>&#x2022; Joint attention (concatenated Q/K/V)</li>
+          <li>&#x2022; Separate FFN per modality</li>
+          <li>&#x2022; ~2× params per block</li>
+          <li>&#x2022; Maintains distinct modality streams</li>
+        </ul>
+      </div>
+      <div class="compare-col" style="border-color:var(--green)">
+        <h4 style="color:var(--green)">Single-Stream (×38)</h4>
+        <ul style="font-size:.84rem;color:var(--text-dim);list-style:none;line-height:2">
+          <li>&#x2022; Single unified QKV for all tokens</li>
+          <li>&#x2022; Standard self-attention</li>
+          <li>&#x2022; Single shared FFN</li>
+          <li>&#x2022; ~1× params per block (more efficient)</li>
+          <li>&#x2022; All tokens treated identically</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note green-note" style="margin-top:16px">
+      <strong>Design rationale:</strong> The dual-stream blocks (early layers) learn modality-specific
+      transformations and align image and text representations. By the time tokens reach the single-stream
+      blocks (later layers), the two modalities are already well-aligned and benefit from unified processing.
+      This hybrid design balances expressiveness with parameter efficiency.
+    </div>
+  </div>
+</div>
+
+<!-- 2D RoPE -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent2)">2D RoPE — Rotary Position Embeddings for Images</div>
+  <div class="section-sub">FLUX extends 1D RoPE (from LLMs) to 2D spatial grids by splitting the head dimension</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:320px">
+        <div class="compare-row" style="gap:16px">
+          <div class="compare-col" style="border-color:#94a3b8">
+            <h4 style="color:#94a3b8">Standard RoPE (1D — LLMs)</h4>
+            <div class="math" style="font-size:.8rem;border-left-color:#94a3b8">
+Token at position i:
+  rotate all head dims by angle i·θ
+
+<span style="color:var(--text-dim)">Encodes: relative distance between tokens
+in a 1D sequence</span></div>
+          </div>
+          <div class="compare-col" style="border-color:var(--accent2)">
+            <h4 style="color:var(--accent2)">2D RoPE (FLUX — images)</h4>
+            <div class="math purple" style="font-size:.8rem">
+Token at grid position (row, col):
+  first half of head dims → rotate by row·θ
+  second half of head dims → rotate by col·θ
+
+<span style="color:var(--text-dim)">Encodes: relative 2D distance between patches
+on the spatial grid</span></div>
+          </div>
+        </div>
+        <div class="math purple" style="margin-top:16px">
+<span style="color:var(--text-dim)">// Example: 64×64 patch grid, head_dim=128</span>
+
+Token at (3, 5):
+  dims [0:64]   → rotated by 3·θ   <span style="color:var(--text-dim)">// encodes row=3</span>
+  dims [64:128] → rotated by 5·θ   <span style="color:var(--text-dim)">// encodes col=5</span>
+
+Token at (3, 6):
+  dims [0:64]   → rotated by 3·θ   <span style="color:var(--text-dim)">// same row!</span>
+  dims [64:128] → rotated by 6·θ   <span style="color:var(--text-dim)">// 1 col apart</span>
+
+<span style="color:var(--text-dim)">// Attention between them naturally captures:</span>
+<span style="color:var(--text-dim)">//   same row, 1 column apart</span></div>
+      </div>
+      <div style="flex:0 0 280px">
+        <div class="info-card" style="border-color:var(--accent2);margin-bottom:16px">
+          <h4 style="color:var(--accent2)">Advantages over Learned Position Embeddings</h4>
+          <p><strong>Resolution flexibility:</strong> RoPE works at any resolution without interpolation.
+          Learned position embeds are fixed to the training resolution.</p>
+          <p style="margin-top:8px"><strong>Relative awareness:</strong> RoPE encodes relative distances,
+          not absolute positions. Two patches 3 apart always have the same relative encoding regardless
+          of where they are in the image.</p>
+          <p style="margin-top:8px"><strong>No extra parameters:</strong> RoPE is parameter-free — the
+          rotation angles are computed from position indices and fixed frequency bands.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /tab-flux -->
+
+
+<!-- ============================================================ -->
+<!-- TAB 4: DENOISING LOOP (Lab 08) -->
+<!-- ============================================================ -->
+<div id="tab-denoise" class="tab-content">
+
+<!-- Visual progression -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent)">From Noise to Image — The Denoising Loop</div>
+  <div class="section-sub">Flow matching with Euler solver: each step moves the latent along a straight trajectory toward clean data</div>
+  <div class="diagram-card">
+    <div class="denoise-steps" style="gap:4px">
+      <div class="denoise-step" style="background:linear-gradient(135deg,rgba(248,113,113,.2),rgba(248,113,113,.05));border:2px solid var(--red);width:140px;height:140px">
+        <div style="font-size:2rem;filter:blur(3px);opacity:.6">&#9641;</div>
+        <span style="color:var(--red);font-weight:700">t = 1.0</span>
+        <span class="step-label">Pure noise</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(251,191,36,.03));border:2px solid var(--yellow);width:140px;height:140px">
+        <div style="font-size:2rem;filter:blur(2px);opacity:.7">&#9641;</div>
+        <span style="color:var(--yellow);font-weight:700">t = 0.75</span>
+        <span class="step-label">Vague structure</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:linear-gradient(135deg,rgba(251,146,60,.15),rgba(251,146,60,.03));border:2px solid var(--orange);width:140px;height:140px">
+        <div style="font-size:2rem;filter:blur(1px);opacity:.8">&#9641;</div>
+        <span style="color:var(--orange);font-weight:700">t = 0.50</span>
+        <span class="step-label">Composition forms</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:linear-gradient(135deg,rgba(167,139,250,.15),rgba(167,139,250,.03));border:2px solid var(--accent2);width:140px;height:140px">
+        <div style="font-size:2rem;filter:blur(.5px);opacity:.9">&#9641;</div>
+        <span style="color:var(--accent2);font-weight:700">t = 0.25</span>
+        <span class="step-label">Details emerge</span>
+      </div>
+      <div class="denoise-arrow">→</div>
+      <div class="denoise-step" style="background:linear-gradient(135deg,rgba(52,211,153,.15),rgba(52,211,153,.05));border:2px solid var(--green);width:140px;height:140px">
+        <div style="font-size:2rem;opacity:1">&#9641;</div>
+        <span style="color:var(--green);font-weight:700">t = 0.0</span>
+        <span class="step-label">Clean image</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Flow matching theory -->
+<div class="section">
+  <div class="section-title" style="color:var(--cyan)">Flow Matching — The Math Behind Denoising</div>
+  <div class="section-sub">A simpler, more efficient alternative to the DDPM noise schedule</div>
+  <div class="diagram-card">
+    <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:320px">
+        <div class="math">
+<span style="color:var(--text-dim)">// Flow matching defines a straight path between noise and data</span>
+
+<span style="color:var(--cyan)">// Forward process (creating noisy data):</span>
+x_t = (1 - t) · x₀ + t · ε     <span style="color:var(--text-dim)">// linear interpolation</span>
+                                  <span style="color:var(--text-dim)">// t=0: clean, t=1: noise</span>
+
+<span style="color:var(--green)">// Velocity field (what the model predicts):</span>
+v = dx_t/dt = ε - x₀            <span style="color:var(--text-dim)">// direction from data to noise</span>
+
+<span style="color:var(--orange)">// Training objective:</span>
+Loss = || f_θ(x_t, t) - v ||²   <span style="color:var(--text-dim)">// predict the velocity</span>
+
+<span style="color:var(--accent2)">// Sampling (reverse — noise to data):</span>
+x_{t-dt} = x_t - v · dt         <span style="color:var(--text-dim)">// Euler step (go backwards)</span>
+                                  <span style="color:var(--text-dim)">// = x_t + v · (-dt)</span></div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div class="info-card" style="border-color:var(--cyan);margin-bottom:16px">
+          <h4 style="color:var(--cyan)">Why Flow Matching over DDPM?</h4>
+          <p><strong>Straighter trajectories:</strong> The path from noise to data is approximately linear,
+          so Euler's method with few steps gives a good approximation. DDPM's curved trajectory needs
+          more steps for accuracy.</p>
+          <p style="margin-top:8px"><strong>Simpler math:</strong> No noise schedule α_t, β_t to tune.
+          Just a linear interpolation between clean data and noise.</p>
+          <p style="margin-top:8px"><strong>Velocity vs noise:</strong> The model predicts a velocity
+          (direction + magnitude) instead of just noise ε. This is more informative at low noise levels.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Euler solver detail -->
+<div class="section">
+  <div class="section-title" style="color:var(--orange)">Euler Solver — Step-by-Step</div>
+  <div class="section-sub">The simplest ODE solver, following the predicted velocity field</div>
+  <div class="diagram-card">
+    <div class="math orange">
+<span style="color:var(--text-dim)">// FLUX.1-schnell: 4 steps, t goes from 1.0 → 0.0</span>
+<span style="color:var(--text-dim)">// Scheduler gives timesteps: [1.0, 0.75, 0.50, 0.25]</span>
+
+<span style="color:var(--yellow)">Step 1:</span> t=1.00, dt=-0.25
+  v₁ = DiT(z_1.00, t=1.00, text_cond)     <span style="color:var(--text-dim)">// model sees pure noise</span>
+  z_0.75 = z_1.00 + v₁ · (-0.25)          <span style="color:var(--text-dim)">// large step, rough structure</span>
+
+<span style="color:var(--yellow)">Step 2:</span> t=0.75, dt=-0.25
+  v₂ = DiT(z_0.75, t=0.75, text_cond)     <span style="color:var(--text-dim)">// model sees vague structure</span>
+  z_0.50 = z_0.75 + v₂ · (-0.25)          <span style="color:var(--text-dim)">// composition solidifies</span>
+
+<span style="color:var(--yellow)">Step 3:</span> t=0.50, dt=-0.25
+  v₃ = DiT(z_0.50, t=0.50, text_cond)     <span style="color:var(--text-dim)">// model refines mid-level</span>
+  z_0.25 = z_0.50 + v₃ · (-0.25)          <span style="color:var(--text-dim)">// details begin forming</span>
+
+<span style="color:var(--yellow)">Step 4:</span> t=0.25, dt=-0.25
+  v₄ = DiT(z_0.25, t=0.25, text_cond)     <span style="color:var(--text-dim)">// model adds fine details</span>
+  z_0.00 = z_0.25 + v₄ · (-0.25)          <span style="color:var(--text-dim)">// final clean latent!</span></div>
+    <div class="note" style="margin-top:16px">
+      <strong>Each step uses the SAME model with different timestep t.</strong> The model is trained
+      to handle any noise level. Early steps (high t) make large structural changes.
+      Later steps (low t) refine fine details. The timestep embedding tells the model
+      what kind of corrections are needed at each stage.
+    </div>
+  </div>
+</div>
+
+<!-- Statistics evolution -->
+<div class="section">
+  <div class="section-title" style="color:var(--accent2)">How Latent Statistics Evolve</div>
+  <div class="section-sub">Watching noise become structure through statistical measures</div>
+  <div class="diagram-card">
+    <table class="dim-table">
+      <tr>
+        <th>Step</th><th>Timestep t</th><th>Mean</th><th>Std</th><th>Interpretation</th>
+      </tr>
+      <tr>
+        <td>Start</td>
+        <td class="shape">1.0</td>
+        <td style="font-family:monospace;font-size:.84rem">≈ 0.00</td>
+        <td style="font-family:monospace;font-size:.84rem">≈ 1.00</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Pure Gaussian noise — zero mean, unit variance</td>
+      </tr>
+      <tr>
+        <td>After step 1</td>
+        <td class="shape">0.75</td>
+        <td style="font-family:monospace;font-size:.84rem">shifts</td>
+        <td style="font-family:monospace;font-size:.84rem">changes</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Model pushes latent toward data manifold — rough shapes form</td>
+      </tr>
+      <tr>
+        <td>After step 2</td>
+        <td class="shape">0.50</td>
+        <td style="font-family:monospace;font-size:.84rem">shifts</td>
+        <td style="font-family:monospace;font-size:.84rem">changes</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Spatial structure solidifies — objects have positions</td>
+      </tr>
+      <tr>
+        <td>After step 3</td>
+        <td class="shape">0.25</td>
+        <td style="font-family:monospace;font-size:.84rem">stabilizes</td>
+        <td style="font-family:monospace;font-size:.84rem">stabilizes</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Details emerge — textures, edges, colors sharpen</td>
+      </tr>
+      <tr>
+        <td>Final</td>
+        <td class="shape">0.0</td>
+        <td style="font-family:monospace;font-size:.84rem">final</td>
+        <td style="font-family:monospace;font-size:.84rem">final</td>
+        <td style="font-size:.82rem;color:var(--text-dim)">Clean latent ready for VAE decoding</td>
+      </tr>
+    </table>
+    <div class="note" style="margin-top:16px">
+      <strong>Key insight:</strong> The model has learned an internal model of "what natural images
+      look like at each noise level." At t=1.0, it predicts the coarsest structure.
+      At t=0.25, it predicts the finest details. This hierarchical denoising mirrors how
+      the model was trained — on data at every noise level simultaneously.
+    </div>
+  </div>
+</div>
+
+<!-- DDPM vs Flow Matching -->
+<div class="section">
+  <div class="section-title" style="color:var(--yellow)">DDPM vs Flow Matching — Trajectory Comparison</div>
+  <div class="diagram-card">
+    <div class="compare-row">
+      <div class="compare-col" style="border-color:#94a3b8">
+        <h4 style="color:#94a3b8">DDPM (Stable Diffusion 1.5)</h4>
+        <div class="math" style="border-left-color:#94a3b8;font-size:.8rem">
+<span style="color:var(--text-dim)">// Curved trajectory → needs many steps</span>
+x_t = √ᾱ_t · x₀ + √(1-ᾱ_t) · ε
+
+<span style="color:var(--text-dim)">// Predicts: noise ε</span>
+<span style="color:var(--text-dim)">// Typical: 20-50 steps</span>
+<span style="color:var(--text-dim)">// Needs CFG (2× model evals per step)</span></div>
+        <div style="text-align:center;padding:16px 0;font-size:.78rem;color:var(--text-dim)">
+          <div style="letter-spacing:1px;font-family:monospace">
+            x₁&nbsp;⌒&nbsp;&nbsp;⌒&nbsp;&nbsp;⌒&nbsp;&nbsp;⌒&nbsp;&nbsp;⌒ x₀
+          </div>
+          <div style="margin-top:4px">Curved path — many steps needed</div>
+        </div>
+      </div>
+      <div class="compare-col" style="border-color:var(--green)">
+        <h4 style="color:var(--green)">Flow Matching (FLUX.1)</h4>
+        <div class="math green" style="font-size:.8rem">
+<span style="color:var(--text-dim)">// Straight trajectory → few steps suffice</span>
+x_t = (1-t) · x₀ + t · ε
+
+<span style="color:var(--text-dim)">// Predicts: velocity v = ε - x₀</span>
+<span style="color:var(--text-dim)">// FLUX.1-schnell: just 4 steps</span>
+<span style="color:var(--text-dim)">// No CFG needed (distilled)</span></div>
+        <div style="text-align:center;padding:16px 0;font-size:.78rem;color:var(--text-dim)">
+          <div style="letter-spacing:1px;font-family:monospace">
+            x₁ ─────────────── x₀
+          </div>
+          <div style="margin-top:4px">Straight path — 4 steps enough</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- What each step "does" -->
+<div class="section">
+  <div class="section-title" style="color:var(--pink)">What the Model "Sees" at Each Noise Level</div>
+  <div class="diagram-card">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px">
+      <div class="info-card" style="border-color:var(--red)">
+        <h4 style="color:var(--red)">t ≈ 1.0 (high noise)</h4>
+        <p>Nearly pure noise. The model can only determine the coarsest properties:
+        overall color distribution, rough spatial layout (sky above, ground below),
+        approximate object positions.</p>
+      </div>
+      <div class="info-card" style="border-color:var(--yellow)">
+        <h4 style="color:var(--yellow)">t ≈ 0.75</h4>
+        <p>Large-scale structure visible. The model resolves major compositional elements:
+        where the subject is, background vs foreground, dominant colors and masses.</p>
+      </div>
+      <div class="info-card" style="border-color:var(--orange)">
+        <h4 style="color:var(--orange)">t ≈ 0.50</h4>
+        <p>Medium-level features form. Object shapes are clear, boundaries sharpen,
+        the overall scene is recognizable. Model refines proportions and spatial
+        relationships.</p>
+      </div>
+      <div class="info-card" style="border-color:var(--accent2)">
+        <h4 style="color:var(--accent2)">t ≈ 0.25</h4>
+        <p>Fine details emerge. Textures become visible — fur, leaves, reflections.
+        Edges crisp up, subtle color gradients form. The image is nearly complete.</p>
+      </div>
+      <div class="info-card" style="border-color:var(--green)">
+        <h4 style="color:var(--green)">t ≈ 0.0 (clean)</h4>
+        <p>Final refinement. The finest details are resolved — individual hairs,
+        specular highlights, text readability. Ready for VAE decoding to pixels.</p>
+      </div>
+    </div>
+    <div class="note pink-note" style="margin-top:16px">
+      <strong>Coarse-to-fine generation:</strong> This hierarchical structure is not designed — it's
+      an emergent property of training on all noise levels. The model naturally learns to make
+      large-scale decisions first (when signal is weak) and fine-scale decisions last (when signal
+      is strong). This mirrors how artists work: sketch → composition → details.
+    </div>
+  </div>
+</div>
+
+</div><!-- /tab-denoise -->
+
+</div><!-- /container -->
+
+<script>
+function showTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

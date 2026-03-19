@@ -146,7 +146,7 @@ for n_steps in range(1, num_steps + 1):
             prompt=prompt,
             height=height,
             width=width,
-            num_inference_steps=num_steps,
+            num_inference_steps=n_steps,
             guidance_scale=0.0,
             generator=torch.Generator(device="cuda").manual_seed(42),
             output_type="pil",
